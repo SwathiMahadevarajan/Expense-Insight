@@ -1,0 +1,14 @@
+packages:
+  "recharts": "For beautiful insight charts and spending analytics"
+  "date-fns": "For date formatting and manipulation"
+  "framer-motion": "For page transitions and interactive micro-animations"
+  "clsx": "For conditional class names"
+  "tailwind-merge": "For merging tailwind classes safely"
+  "@hookform/resolvers": "Zod validation for forms"
+
+images: []
+
+notes:
+  - "The API client hooks are exported from @workspace/api-client-react"
+  - "Using recharts for the dashboard and insights data visualization"
+  - "Using local state and custom UI for Email Import parsing review"

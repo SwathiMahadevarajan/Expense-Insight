@@ -1,22 +1,33 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Smart Expense Tracker API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: transactions
+    description: Transaction management
+  - name: categories
+    description: Category management
+  - name: accounts
+    description: Payment source/account management
+  - name: insights
+    description: Analytics and insights
+  - name: notifications
+    description: Notification reminder settings
+  - name: email-import
+    description: Email-based transaction import
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +35,505 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /transactions:
+    get:
+      operationId: listTransactions
+      tags: [transactions]
+      summary: List all transactions
+      parameters:
+        - name: accountId
+          in: query
+          schema:
+            type: string
+        - name: categoryId
+          in: query
+          schema:
+            type: string
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [income, expense]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: List of transactions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transactions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Transaction"
+                  total:
+                    type: integer
+                required:
+                  - transactions
+                  - total
+    post:
+      operationId: createTransaction
+      tags: [transactions]
+      summary: Create a new transaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTransactionInput"
+      responses:
+        "201":
+          description: Transaction created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transaction"
+
+  /transactions/{id}:
+    get:
+      operationId: getTransaction
+      tags: [transactions]
+      summary: Get a transaction by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Transaction found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transaction"
+        "404":
+          description: Not found
+    put:
+      operationId: updateTransaction
+      tags: [transactions]
+      summary: Update a transaction
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTransactionInput"
+      responses:
+        "200":
+          description: Transaction updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Transaction"
+    delete:
+      operationId: deleteTransaction
+      tags: [transactions]
+      summary: Delete a transaction
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  /categories:
+    get:
+      operationId: listCategories
+      tags: [categories]
+      summary: List all categories
+      responses:
+        "200":
+          description: List of categories
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  categories:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Category"
+                required:
+                  - categories
+    post:
+      operationId: createCategory
+      tags: [categories]
+      summary: Create a new category
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCategoryInput"
+      responses:
+        "201":
+          description: Category created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Category"
+
+  /categories/{id}:
+    put:
+      operationId: updateCategory
+      tags: [categories]
+      summary: Update a category
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCategoryInput"
+      responses:
+        "200":
+          description: Category updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Category"
+    delete:
+      operationId: deleteCategory
+      tags: [categories]
+      summary: Delete a category
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  /accounts:
+    get:
+      operationId: listAccounts
+      tags: [accounts]
+      summary: List all payment sources/accounts
+      responses:
+        "200":
+          description: List of accounts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accounts:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Account"
+                required:
+                  - accounts
+    post:
+      operationId: createAccount
+      tags: [accounts]
+      summary: Create a new account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAccountInput"
+      responses:
+        "201":
+          description: Account created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+
+  /accounts/{id}:
+    put:
+      operationId: updateAccount
+      tags: [accounts]
+      summary: Update an account
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAccountInput"
+      responses:
+        "200":
+          description: Account updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+    delete:
+      operationId: deleteAccount
+      tags: [accounts]
+      summary: Delete an account
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  /insights/summary:
+    get:
+      operationId: getInsightsSummary
+      tags: [insights]
+      summary: Get spending summary and analytics
+      parameters:
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: [week, month, quarter, year, custom]
+            default: month
+      responses:
+        "200":
+          description: Insights summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InsightsSummary"
+
+  /insights/spending-by-category:
+    get:
+      operationId: getSpendingByCategory
+      tags: [insights]
+      summary: Get spending breakdown by category
+      parameters:
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: [week, month, quarter, year, custom]
+            default: month
+      responses:
+        "200":
+          description: Spending by category
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/CategorySpending"
+                required:
+                  - data
+
+  /insights/daily-spending:
+    get:
+      operationId: getDailySpending
+      tags: [insights]
+      summary: Get daily spending trend
+      parameters:
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: [week, month, quarter, year, custom]
+            default: month
+      responses:
+        "200":
+          description: Daily spending data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/DailySpending"
+                required:
+                  - data
+
+  /notifications:
+    get:
+      operationId: listNotifications
+      tags: [notifications]
+      summary: List all notification reminders
+      responses:
+        "200":
+          description: List of notifications
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  notifications:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/NotificationSetting"
+                required:
+                  - notifications
+    post:
+      operationId: createNotification
+      tags: [notifications]
+      summary: Create a new notification reminder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateNotificationInput"
+      responses:
+        "201":
+          description: Notification created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationSetting"
+
+  /notifications/{id}:
+    put:
+      operationId: updateNotification
+      tags: [notifications]
+      summary: Update a notification reminder
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateNotificationInput"
+      responses:
+        "200":
+          description: Notification updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationSetting"
+    delete:
+      operationId: deleteNotification
+      tags: [notifications]
+      summary: Delete a notification reminder
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  /email-import/parse:
+    post:
+      operationId: parseEmailTransaction
+      tags: [email-import]
+      summary: Parse email content and extract transaction data
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailParseInput"
+      responses:
+        "200":
+          description: Parsed transaction data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailParseResult"
+
+  /email-import/import:
+    post:
+      operationId: importEmailTransactions
+      tags: [email-import]
+      summary: Import parsed transactions from email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailImportInput"
+      responses:
+        "200":
+          description: Import result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailImportResult"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +544,570 @@ components:
       required:
         - status
 
+    Transaction:
+      type: object
+      properties:
+        id:
+          type: string
+        amount:
+          type: number
+          format: double
+        type:
+          type: string
+          enum: [income, expense]
+        description:
+          type: string
+        merchantName:
+          type: string
+          nullable: true
+        date:
+          type: string
+          format: date-time
+        categoryId:
+          type: string
+          nullable: true
+        categoryName:
+          type: string
+          nullable: true
+        categoryColor:
+          type: string
+          nullable: true
+        categoryIcon:
+          type: string
+          nullable: true
+        accountId:
+          type: string
+          nullable: true
+        accountName:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        importSource:
+          type: string
+          enum: [manual, email]
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - amount
+        - type
+        - description
+        - date
+        - createdAt
+        - updatedAt
+
+    CreateTransactionInput:
+      type: object
+      properties:
+        amount:
+          type: number
+          format: double
+        type:
+          type: string
+          enum: [income, expense]
+        description:
+          type: string
+        merchantName:
+          type: string
+          nullable: true
+        date:
+          type: string
+          format: date-time
+        categoryId:
+          type: string
+          nullable: true
+        accountId:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        importSource:
+          type: string
+          enum: [manual, email]
+          nullable: true
+      required:
+        - amount
+        - type
+        - description
+        - date
+
+    UpdateTransactionInput:
+      type: object
+      properties:
+        amount:
+          type: number
+          format: double
+        type:
+          type: string
+          enum: [income, expense]
+        description:
+          type: string
+        merchantName:
+          type: string
+          nullable: true
+        date:
+          type: string
+          format: date-time
+        categoryId:
+          type: string
+          nullable: true
+        accountId:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+
+    Category:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        icon:
+          type: string
+        color:
+          type: string
+        type:
+          type: string
+          enum: [income, expense, both]
+        isDefault:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - icon
+        - color
+        - type
+        - isDefault
+        - createdAt
+
+    CreateCategoryInput:
+      type: object
+      properties:
+        name:
+          type: string
+        icon:
+          type: string
+        color:
+          type: string
+        type:
+          type: string
+          enum: [income, expense, both]
+      required:
+        - name
+        - icon
+        - color
+        - type
+
+    UpdateCategoryInput:
+      type: object
+      properties:
+        name:
+          type: string
+        icon:
+          type: string
+        color:
+          type: string
+        type:
+          type: string
+          enum: [income, expense, both]
+
+    Account:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          enum: [bank, credit_card, cash, wallet, investment, other]
+        color:
+          type: string
+        icon:
+          type: string
+        openingBalance:
+          type: number
+          format: double
+        currentBalance:
+          type: number
+          format: double
+        currency:
+          type: string
+          default: INR
+        isDefault:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - type
+        - color
+        - icon
+        - openingBalance
+        - currentBalance
+        - currency
+        - isDefault
+        - createdAt
+        - updatedAt
+
+    CreateAccountInput:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [bank, credit_card, cash, wallet, investment, other]
+        color:
+          type: string
+        icon:
+          type: string
+        openingBalance:
+          type: number
+          format: double
+        currency:
+          type: string
+          default: INR
+        isDefault:
+          type: boolean
+      required:
+        - name
+        - type
+        - color
+        - icon
+        - openingBalance
+
+    UpdateAccountInput:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [bank, credit_card, cash, wallet, investment, other]
+        color:
+          type: string
+        icon:
+          type: string
+        openingBalance:
+          type: number
+          format: double
+        currency:
+          type: string
+        isDefault:
+          type: boolean
+
+    InsightsSummary:
+      type: object
+      properties:
+        totalIncome:
+          type: number
+          format: double
+        totalExpenses:
+          type: number
+          format: double
+        netSavings:
+          type: number
+          format: double
+        savingsRate:
+          type: number
+          format: double
+        dailyAverage:
+          type: number
+          format: double
+        transactionCount:
+          type: integer
+        topCategory:
+          type: string
+          nullable: true
+        topCategoryAmount:
+          type: number
+          format: double
+          nullable: true
+        periodLabel:
+          type: string
+        accountBalances:
+          type: array
+          items:
+            type: object
+            properties:
+              accountId:
+                type: string
+              accountName:
+                type: string
+              balance:
+                type: number
+                format: double
+            required:
+              - accountId
+              - accountName
+              - balance
+      required:
+        - totalIncome
+        - totalExpenses
+        - netSavings
+        - savingsRate
+        - dailyAverage
+        - transactionCount
+        - periodLabel
+        - accountBalances
+
+    CategorySpending:
+      type: object
+      properties:
+        categoryId:
+          type: string
+          nullable: true
+        categoryName:
+          type: string
+        categoryColor:
+          type: string
+        categoryIcon:
+          type: string
+        amount:
+          type: number
+          format: double
+        percentage:
+          type: number
+          format: double
+        transactionCount:
+          type: integer
+      required:
+        - categoryName
+        - categoryColor
+        - categoryIcon
+        - amount
+        - percentage
+        - transactionCount
+
+    DailySpending:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        amount:
+          type: number
+          format: double
+        income:
+          type: number
+          format: double
+        transactionCount:
+          type: integer
+      required:
+        - date
+        - amount
+        - income
+        - transactionCount
+
+    NotificationSetting:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        message:
+          type: string
+        type:
+          type: string
+          enum: [daily_review, weekly_summary, bill_reminder, budget_alert, custom]
+        frequency:
+          type: string
+          enum: [daily, weekly, monthly, once]
+        time:
+          type: string
+          description: "Time in HH:MM format"
+        dayOfWeek:
+          type: integer
+          nullable: true
+          description: "0=Sunday, 6=Saturday"
+        dayOfMonth:
+          type: integer
+          nullable: true
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - title
+        - message
+        - type
+        - frequency
+        - time
+        - isActive
+        - createdAt
+
+    CreateNotificationInput:
+      type: object
+      properties:
+        title:
+          type: string
+        message:
+          type: string
+        type:
+          type: string
+          enum: [daily_review, weekly_summary, bill_reminder, budget_alert, custom]
+        frequency:
+          type: string
+          enum: [daily, weekly, monthly, once]
+        time:
+          type: string
+        dayOfWeek:
+          type: integer
+          nullable: true
+        dayOfMonth:
+          type: integer
+          nullable: true
+        isActive:
+          type: boolean
+      required:
+        - title
+        - message
+        - type
+        - frequency
+        - time
+
+    UpdateNotificationInput:
+      type: object
+      properties:
+        title:
+          type: string
+        message:
+          type: string
+        type:
+          type: string
+          enum: [daily_review, weekly_summary, bill_reminder, budget_alert, custom]
+        frequency:
+          type: string
+          enum: [daily, weekly, monthly, once]
+        time:
+          type: string
+        dayOfWeek:
+          type: integer
+          nullable: true
+        dayOfMonth:
+          type: integer
+          nullable: true
+        isActive:
+          type: boolean
+
+    EmailParseInput:
+      type: object
+      properties:
+        emailContent:
+          type: string
+          description: Raw email body text or HTML
+        emailSubject:
+          type: string
+          nullable: true
+        emailFrom:
+          type: string
+          nullable: true
+      required:
+        - emailContent
+
+    ParsedTransaction:
+      type: object
+      properties:
+        amount:
+          type: number
+          format: double
+        type:
+          type: string
+          enum: [income, expense]
+        description:
+          type: string
+        merchantName:
+          type: string
+          nullable: true
+        date:
+          type: string
+          format: date-time
+        suggestedCategoryId:
+          type: string
+          nullable: true
+        suggestedCategoryName:
+          type: string
+          nullable: true
+        accountId:
+          type: string
+          nullable: true
+        confidence:
+          type: number
+          format: double
+          description: "Parsing confidence 0-1"
+        rawText:
+          type: string
+          nullable: true
+      required:
+        - amount
+        - type
+        - description
+        - date
+        - confidence
+
+    EmailParseResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        transactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ParsedTransaction"
+        rawExtracted:
+          type: string
+          nullable: true
+        errors:
+          type: array
+          items:
+            type: string
+      required:
+        - success
+        - transactions
+        - errors
+
+    EmailImportInput:
+      type: object
+      properties:
+        transactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreateTransactionInput"
+      required:
+        - transactions
+
+    EmailImportResult:
+      type: object
+      properties:
+        imported:
+          type: integer
+        transactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Transaction"
+      required:
+        - imported
+        - transactions
