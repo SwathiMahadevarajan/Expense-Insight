@@ -15,6 +15,121 @@ export const HealthCheckResponse = zod.object({
 });
 
 /**
+ * @summary Get currently authenticated user
+ */
+export const GetCurrentAuthUserResponse = zod.object({
+  user: zod.union([
+    zod.object({
+      id: zod.string(),
+      email: zod.string().nullish(),
+      firstName: zod.string().nullish(),
+      lastName: zod.string().nullish(),
+      profileImageUrl: zod.string().nullish(),
+    }),
+    zod.null(),
+  ]),
+});
+
+/**
+ * @summary Start OIDC login flow
+ */
+export const BeginBrowserLoginQueryParams = zod.object({
+  returnTo: zod.coerce.string().optional(),
+});
+
+/**
+ * @summary OIDC callback
+ */
+export const HandleBrowserLoginCallbackQueryParams = zod.object({
+  code: zod.coerce.string().optional(),
+  state: zod.coerce.string().optional(),
+});
+
+/**
+ * @summary Mobile token exchange
+ */
+export const ExchangeMobileAuthorizationCodeBody = zod.object({
+  code: zod.string(),
+  code_verifier: zod.string(),
+  redirect_uri: zod.string(),
+  state: zod.string(),
+  nonce: zod.string().optional(),
+});
+
+export const ExchangeMobileAuthorizationCodeResponse = zod.object({
+  token: zod.string(),
+});
+
+/**
+ * @summary Mobile logout
+ */
+export const LogoutMobileSessionResponse = zod.object({
+  success: zod.boolean(),
+});
+
+/**
+ * @summary Get Gmail OAuth authorization URL
+ */
+export const GetGmailAuthUrlResponse = zod.object({
+  url: zod.string(),
+});
+
+/**
+ * @summary Handle Gmail OAuth callback
+ */
+export const HandleGmailCallbackQueryParams = zod.object({
+  code: zod.coerce.string().optional(),
+  state: zod.coerce.string().optional(),
+  error: zod.coerce.string().optional(),
+});
+
+/**
+ * @summary Get Gmail connection status
+ */
+export const GetGmailStatusResponse = zod.object({
+  connected: zod.boolean(),
+  email: zod.string().nullish(),
+  lastSyncAt: zod.date().nullish(),
+  autoSyncEnabled: zod.boolean(),
+});
+
+/**
+ * @summary Disconnect Gmail
+ */
+export const DisconnectGmailResponse = zod.object({
+  success: zod.boolean(),
+});
+
+/**
+ * @summary Manually trigger Gmail transaction import
+ */
+export const TriggerGmailSyncResponse = zod.object({
+  imported: zod.number(),
+  skipped: zod.number(),
+  errors: zod.number(),
+  transactions: zod.array(
+    zod.object({
+      id: zod.string(),
+      amount: zod.number(),
+      type: zod.enum(["income", "expense"]),
+      description: zod.string(),
+      merchantName: zod.string().nullish(),
+      date: zod.date(),
+      categoryId: zod.string().nullish(),
+      categoryName: zod.string().nullish(),
+      categoryColor: zod.string().nullish(),
+      categoryIcon: zod.string().nullish(),
+      accountId: zod.string().nullish(),
+      accountName: zod.string().nullish(),
+      notes: zod.string().nullish(),
+      importSource: zod.enum(["manual", "email"]).nullish(),
+      createdAt: zod.date(),
+      updatedAt: zod.date(),
+    }),
+  ),
+});
+
+/**
  * @summary List all transactions
  */
 export const listTransactionsQueryLimitDefault = 100;

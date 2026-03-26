@@ -18,20 +18,28 @@ import type {
 
 import type {
   Account,
+  AuthUserEnvelope,
+  BeginBrowserLoginParams,
   Category,
   CreateAccountInput,
   CreateCategoryInput,
   CreateNotificationInput,
   CreateTransactionInput,
+  DisconnectGmail200,
   EmailImportInput,
   EmailImportResult,
   EmailParseInput,
   EmailParseResult,
   GetDailySpending200,
   GetDailySpendingParams,
+  GetGmailAuthUrl200,
   GetInsightsSummaryParams,
   GetSpendingByCategory200,
   GetSpendingByCategoryParams,
+  GmailStatus,
+  GmailSyncResult,
+  HandleBrowserLoginCallbackParams,
+  HandleGmailCallbackParams,
   HealthStatus,
   InsightsSummary,
   ListAccounts200,
@@ -39,6 +47,9 @@ import type {
   ListNotifications200,
   ListTransactions200,
   ListTransactionsParams,
+  LogoutSuccess,
+  MobileTokenExchangeRequest,
+  MobileTokenExchangeSuccess,
   NotificationSetting,
   Transaction,
   UpdateAccountInput,
@@ -130,6 +141,941 @@ export function useHealthCheck<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Get currently authenticated user
+ */
+export const getGetCurrentAuthUserUrl = () => {
+  return `/api/auth/user`;
+};
+
+export const getCurrentAuthUser = async (
+  options?: RequestInit,
+): Promise<AuthUserEnvelope> => {
+  return customFetch<AuthUserEnvelope>(getGetCurrentAuthUserUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetCurrentAuthUserQueryKey = () => {
+  return [`/api/auth/user`] as const;
+};
+
+export const getGetCurrentAuthUserQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCurrentAuthUser>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getCurrentAuthUser>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetCurrentAuthUserQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getCurrentAuthUser>>
+  > = ({ signal }) => getCurrentAuthUser({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCurrentAuthUser>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCurrentAuthUserQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCurrentAuthUser>>
+>;
+export type GetCurrentAuthUserQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get currently authenticated user
+ */
+
+export function useGetCurrentAuthUser<
+  TData = Awaited<ReturnType<typeof getCurrentAuthUser>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getCurrentAuthUser>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCurrentAuthUserQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Start OIDC login flow
+ */
+export const getBeginBrowserLoginUrl = (params?: BeginBrowserLoginParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/login?${stringifiedParams}`
+    : `/api/login`;
+};
+
+export const beginBrowserLogin = async (
+  params?: BeginBrowserLoginParams,
+  options?: RequestInit,
+): Promise<unknown> => {
+  return customFetch<unknown>(getBeginBrowserLoginUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getBeginBrowserLoginQueryKey = (
+  params?: BeginBrowserLoginParams,
+) => {
+  return [`/api/login`, ...(params ? [params] : [])] as const;
+};
+
+export const getBeginBrowserLoginQueryOptions = <
+  TData = Awaited<ReturnType<typeof beginBrowserLogin>>,
+  TError = ErrorType<void>,
+>(
+  params?: BeginBrowserLoginParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof beginBrowserLogin>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getBeginBrowserLoginQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof beginBrowserLogin>>
+  > = ({ signal }) => beginBrowserLogin(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof beginBrowserLogin>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type BeginBrowserLoginQueryResult = NonNullable<
+  Awaited<ReturnType<typeof beginBrowserLogin>>
+>;
+export type BeginBrowserLoginQueryError = ErrorType<void>;
+
+/**
+ * @summary Start OIDC login flow
+ */
+
+export function useBeginBrowserLogin<
+  TData = Awaited<ReturnType<typeof beginBrowserLogin>>,
+  TError = ErrorType<void>,
+>(
+  params?: BeginBrowserLoginParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof beginBrowserLogin>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getBeginBrowserLoginQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary OIDC callback
+ */
+export const getHandleBrowserLoginCallbackUrl = (
+  params?: HandleBrowserLoginCallbackParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/callback?${stringifiedParams}`
+    : `/api/callback`;
+};
+
+export const handleBrowserLoginCallback = async (
+  params?: HandleBrowserLoginCallbackParams,
+  options?: RequestInit,
+): Promise<unknown> => {
+  return customFetch<unknown>(getHandleBrowserLoginCallbackUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getHandleBrowserLoginCallbackQueryKey = (
+  params?: HandleBrowserLoginCallbackParams,
+) => {
+  return [`/api/callback`, ...(params ? [params] : [])] as const;
+};
+
+export const getHandleBrowserLoginCallbackQueryOptions = <
+  TData = Awaited<ReturnType<typeof handleBrowserLoginCallback>>,
+  TError = ErrorType<void>,
+>(
+  params?: HandleBrowserLoginCallbackParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof handleBrowserLoginCallback>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getHandleBrowserLoginCallbackQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof handleBrowserLoginCallback>>
+  > = ({ signal }) =>
+    handleBrowserLoginCallback(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof handleBrowserLoginCallback>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type HandleBrowserLoginCallbackQueryResult = NonNullable<
+  Awaited<ReturnType<typeof handleBrowserLoginCallback>>
+>;
+export type HandleBrowserLoginCallbackQueryError = ErrorType<void>;
+
+/**
+ * @summary OIDC callback
+ */
+
+export function useHandleBrowserLoginCallback<
+  TData = Awaited<ReturnType<typeof handleBrowserLoginCallback>>,
+  TError = ErrorType<void>,
+>(
+  params?: HandleBrowserLoginCallbackParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof handleBrowserLoginCallback>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getHandleBrowserLoginCallbackQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Logout
+ */
+export const getLogoutBrowserSessionUrl = () => {
+  return `/api/logout`;
+};
+
+export const logoutBrowserSession = async (
+  options?: RequestInit,
+): Promise<unknown> => {
+  return customFetch<unknown>(getLogoutBrowserSessionUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getLogoutBrowserSessionQueryKey = () => {
+  return [`/api/logout`] as const;
+};
+
+export const getLogoutBrowserSessionQueryOptions = <
+  TData = Awaited<ReturnType<typeof logoutBrowserSession>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof logoutBrowserSession>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getLogoutBrowserSessionQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof logoutBrowserSession>>
+  > = ({ signal }) => logoutBrowserSession({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof logoutBrowserSession>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type LogoutBrowserSessionQueryResult = NonNullable<
+  Awaited<ReturnType<typeof logoutBrowserSession>>
+>;
+export type LogoutBrowserSessionQueryError = ErrorType<void>;
+
+/**
+ * @summary Logout
+ */
+
+export function useLogoutBrowserSession<
+  TData = Awaited<ReturnType<typeof logoutBrowserSession>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof logoutBrowserSession>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getLogoutBrowserSessionQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Mobile token exchange
+ */
+export const getExchangeMobileAuthorizationCodeUrl = () => {
+  return `/api/mobile-auth/token-exchange`;
+};
+
+export const exchangeMobileAuthorizationCode = async (
+  mobileTokenExchangeRequest: MobileTokenExchangeRequest,
+  options?: RequestInit,
+): Promise<MobileTokenExchangeSuccess> => {
+  return customFetch<MobileTokenExchangeSuccess>(
+    getExchangeMobileAuthorizationCodeUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(mobileTokenExchangeRequest),
+    },
+  );
+};
+
+export const getExchangeMobileAuthorizationCodeMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof exchangeMobileAuthorizationCode>>,
+    TError,
+    { data: BodyType<MobileTokenExchangeRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof exchangeMobileAuthorizationCode>>,
+  TError,
+  { data: BodyType<MobileTokenExchangeRequest> },
+  TContext
+> => {
+  const mutationKey = ["exchangeMobileAuthorizationCode"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof exchangeMobileAuthorizationCode>>,
+    { data: BodyType<MobileTokenExchangeRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return exchangeMobileAuthorizationCode(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ExchangeMobileAuthorizationCodeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof exchangeMobileAuthorizationCode>>
+>;
+export type ExchangeMobileAuthorizationCodeMutationBody =
+  BodyType<MobileTokenExchangeRequest>;
+export type ExchangeMobileAuthorizationCodeMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Mobile token exchange
+ */
+export const useExchangeMobileAuthorizationCode = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof exchangeMobileAuthorizationCode>>,
+    TError,
+    { data: BodyType<MobileTokenExchangeRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof exchangeMobileAuthorizationCode>>,
+  TError,
+  { data: BodyType<MobileTokenExchangeRequest> },
+  TContext
+> => {
+  return useMutation(
+    getExchangeMobileAuthorizationCodeMutationOptions(options),
+  );
+};
+
+/**
+ * @summary Mobile logout
+ */
+export const getLogoutMobileSessionUrl = () => {
+  return `/api/mobile-auth/logout`;
+};
+
+export const logoutMobileSession = async (
+  options?: RequestInit,
+): Promise<LogoutSuccess> => {
+  return customFetch<LogoutSuccess>(getLogoutMobileSessionUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getLogoutMobileSessionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof logoutMobileSession>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof logoutMobileSession>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["logoutMobileSession"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof logoutMobileSession>>,
+    void
+  > = () => {
+    return logoutMobileSession(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type LogoutMobileSessionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof logoutMobileSession>>
+>;
+
+export type LogoutMobileSessionMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Mobile logout
+ */
+export const useLogoutMobileSession = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof logoutMobileSession>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof logoutMobileSession>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getLogoutMobileSessionMutationOptions(options));
+};
+
+/**
+ * @summary Get Gmail OAuth authorization URL
+ */
+export const getGetGmailAuthUrlUrl = () => {
+  return `/api/gmail/auth-url`;
+};
+
+export const getGmailAuthUrl = async (
+  options?: RequestInit,
+): Promise<GetGmailAuthUrl200> => {
+  return customFetch<GetGmailAuthUrl200>(getGetGmailAuthUrlUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetGmailAuthUrlQueryKey = () => {
+  return [`/api/gmail/auth-url`] as const;
+};
+
+export const getGetGmailAuthUrlQueryOptions = <
+  TData = Awaited<ReturnType<typeof getGmailAuthUrl>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getGmailAuthUrl>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetGmailAuthUrlQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getGmailAuthUrl>>> = ({
+    signal,
+  }) => getGmailAuthUrl({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getGmailAuthUrl>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetGmailAuthUrlQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getGmailAuthUrl>>
+>;
+export type GetGmailAuthUrlQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get Gmail OAuth authorization URL
+ */
+
+export function useGetGmailAuthUrl<
+  TData = Awaited<ReturnType<typeof getGmailAuthUrl>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getGmailAuthUrl>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetGmailAuthUrlQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Handle Gmail OAuth callback
+ */
+export const getHandleGmailCallbackUrl = (
+  params?: HandleGmailCallbackParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/gmail/callback?${stringifiedParams}`
+    : `/api/gmail/callback`;
+};
+
+export const handleGmailCallback = async (
+  params?: HandleGmailCallbackParams,
+  options?: RequestInit,
+): Promise<unknown> => {
+  return customFetch<unknown>(getHandleGmailCallbackUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getHandleGmailCallbackQueryKey = (
+  params?: HandleGmailCallbackParams,
+) => {
+  return [`/api/gmail/callback`, ...(params ? [params] : [])] as const;
+};
+
+export const getHandleGmailCallbackQueryOptions = <
+  TData = Awaited<ReturnType<typeof handleGmailCallback>>,
+  TError = ErrorType<void>,
+>(
+  params?: HandleGmailCallbackParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof handleGmailCallback>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getHandleGmailCallbackQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof handleGmailCallback>>
+  > = ({ signal }) =>
+    handleGmailCallback(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof handleGmailCallback>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type HandleGmailCallbackQueryResult = NonNullable<
+  Awaited<ReturnType<typeof handleGmailCallback>>
+>;
+export type HandleGmailCallbackQueryError = ErrorType<void>;
+
+/**
+ * @summary Handle Gmail OAuth callback
+ */
+
+export function useHandleGmailCallback<
+  TData = Awaited<ReturnType<typeof handleGmailCallback>>,
+  TError = ErrorType<void>,
+>(
+  params?: HandleGmailCallbackParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof handleGmailCallback>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getHandleGmailCallbackQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Get Gmail connection status
+ */
+export const getGetGmailStatusUrl = () => {
+  return `/api/gmail/status`;
+};
+
+export const getGmailStatus = async (
+  options?: RequestInit,
+): Promise<GmailStatus> => {
+  return customFetch<GmailStatus>(getGetGmailStatusUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetGmailStatusQueryKey = () => {
+  return [`/api/gmail/status`] as const;
+};
+
+export const getGetGmailStatusQueryOptions = <
+  TData = Awaited<ReturnType<typeof getGmailStatus>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getGmailStatus>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetGmailStatusQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getGmailStatus>>> = ({
+    signal,
+  }) => getGmailStatus({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getGmailStatus>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetGmailStatusQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getGmailStatus>>
+>;
+export type GetGmailStatusQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get Gmail connection status
+ */
+
+export function useGetGmailStatus<
+  TData = Awaited<ReturnType<typeof getGmailStatus>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getGmailStatus>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetGmailStatusQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Disconnect Gmail
+ */
+export const getDisconnectGmailUrl = () => {
+  return `/api/gmail/disconnect`;
+};
+
+export const disconnectGmail = async (
+  options?: RequestInit,
+): Promise<DisconnectGmail200> => {
+  return customFetch<DisconnectGmail200>(getDisconnectGmailUrl(), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDisconnectGmailMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof disconnectGmail>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof disconnectGmail>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["disconnectGmail"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof disconnectGmail>>,
+    void
+  > = () => {
+    return disconnectGmail(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DisconnectGmailMutationResult = NonNullable<
+  Awaited<ReturnType<typeof disconnectGmail>>
+>;
+
+export type DisconnectGmailMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Disconnect Gmail
+ */
+export const useDisconnectGmail = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof disconnectGmail>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof disconnectGmail>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getDisconnectGmailMutationOptions(options));
+};
+
+/**
+ * @summary Manually trigger Gmail transaction import
+ */
+export const getTriggerGmailSyncUrl = () => {
+  return `/api/gmail/sync`;
+};
+
+export const triggerGmailSync = async (
+  options?: RequestInit,
+): Promise<GmailSyncResult> => {
+  return customFetch<GmailSyncResult>(getTriggerGmailSyncUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getTriggerGmailSyncMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof triggerGmailSync>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof triggerGmailSync>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["triggerGmailSync"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof triggerGmailSync>>,
+    void
+  > = () => {
+    return triggerGmailSync(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type TriggerGmailSyncMutationResult = NonNullable<
+  Awaited<ReturnType<typeof triggerGmailSync>>
+>;
+
+export type TriggerGmailSyncMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Manually trigger Gmail transaction import
+ */
+export const useTriggerGmailSync = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof triggerGmailSync>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof triggerGmailSync>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getTriggerGmailSyncMutationOptions(options));
+};
 
 /**
  * @summary List all transactions

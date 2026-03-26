@@ -9,14 +9,15 @@ import {
   ListTransactionsQueryParams,
   GetTransactionParams,
 } from "@workspace/api-zod";
-import { eq, and, gte, lte, desc, sql, count } from "drizzle-orm";
+import { eq, and, gte, lte, desc, count } from "drizzle-orm";
 
 const router: IRouter = Router();
 
 router.get("/transactions", async (req, res) => {
+  if (!req.isAuthenticated()) { res.status(401).json({ error: "Unauthorized" }); return; }
   try {
     const query = ListTransactionsQueryParams.parse(req.query);
-    const conditions = [];
+    const conditions = [eq(transactionsTable.userId, req.user.id)];
 
     if (query.accountId) conditions.push(eq(transactionsTable.accountId, query.accountId));
     if (query.categoryId) conditions.push(eq(transactionsTable.categoryId, query.categoryId));
@@ -54,14 +55,11 @@ router.get("/transactions", async (req, res) => {
         .from(transactionsTable)
         .leftJoin(categoriesTable, eq(transactionsTable.categoryId, categoriesTable.id))
         .leftJoin(accountsTable, eq(transactionsTable.accountId, accountsTable.id))
-        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .where(and(...conditions))
         .orderBy(desc(transactionsTable.date))
         .limit(limit)
         .offset(offset),
-      db
-        .select({ count: count() })
-        .from(transactionsTable)
-        .where(conditions.length > 0 ? and(...conditions) : undefined),
+      db.select({ count: count() }).from(transactionsTable).where(and(...conditions)),
     ]);
 
     res.json({ transactions, total: totalResult[0]?.count ?? 0 });
@@ -72,11 +70,12 @@ router.get("/transactions", async (req, res) => {
 });
 
 router.post("/transactions", async (req, res) => {
+  if (!req.isAuthenticated()) { res.status(401).json({ error: "Unauthorized" }); return; }
   try {
     const body = CreateTransactionBody.parse(req.body);
     const [transaction] = await db
       .insert(transactionsTable)
-      .values({ ...body, date: new Date(body.date) })
+      .values({ ...body, userId: req.user.id, date: new Date(body.date) })
       .returning();
     res.status(201).json(transaction);
   } catch (err) {
@@ -86,6 +85,7 @@ router.post("/transactions", async (req, res) => {
 });
 
 router.get("/transactions/:id", async (req, res) => {
+  if (!req.isAuthenticated()) { res.status(401).json({ error: "Unauthorized" }); return; }
   try {
     const { id } = GetTransactionParams.parse(req.params);
     const [transaction] = await db
@@ -110,12 +110,9 @@ router.get("/transactions/:id", async (req, res) => {
       .from(transactionsTable)
       .leftJoin(categoriesTable, eq(transactionsTable.categoryId, categoriesTable.id))
       .leftJoin(accountsTable, eq(transactionsTable.accountId, accountsTable.id))
-      .where(eq(transactionsTable.id, id));
+      .where(and(eq(transactionsTable.id, id), eq(transactionsTable.userId, req.user.id)));
 
-    if (!transaction) {
-      res.status(404).json({ error: "Transaction not found" });
-      return;
-    }
+    if (!transaction) { res.status(404).json({ error: "Not found" }); return; }
     res.json(transaction);
   } catch (err) {
     req.log.error({ err }, "Failed to get transaction");
@@ -124,6 +121,7 @@ router.get("/transactions/:id", async (req, res) => {
 });
 
 router.put("/transactions/:id", async (req, res) => {
+  if (!req.isAuthenticated()) { res.status(401).json({ error: "Unauthorized" }); return; }
   try {
     const { id } = UpdateTransactionParams.parse(req.params);
     const body = UpdateTransactionBody.parse(req.body);
@@ -133,13 +131,10 @@ router.put("/transactions/:id", async (req, res) => {
     const [updated] = await db
       .update(transactionsTable)
       .set(updateData)
-      .where(eq(transactionsTable.id, id))
+      .where(and(eq(transactionsTable.id, id), eq(transactionsTable.userId, req.user.id)))
       .returning();
 
-    if (!updated) {
-      res.status(404).json({ error: "Transaction not found" });
-      return;
-    }
+    if (!updated) { res.status(404).json({ error: "Not found" }); return; }
     res.json(updated);
   } catch (err) {
     req.log.error({ err }, "Failed to update transaction");
@@ -148,9 +143,11 @@ router.put("/transactions/:id", async (req, res) => {
 });
 
 router.delete("/transactions/:id", async (req, res) => {
+  if (!req.isAuthenticated()) { res.status(401).json({ error: "Unauthorized" }); return; }
   try {
     const { id } = DeleteTransactionParams.parse(req.params);
-    await db.delete(transactionsTable).where(eq(transactionsTable.id, id));
+    await db.delete(transactionsTable)
+      .where(and(eq(transactionsTable.id, id), eq(transactionsTable.userId, req.user.id)));
     res.status(204).send();
   } catch (err) {
     req.log.error({ err }, "Failed to delete transaction");

@@ -9,6 +9,10 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication
+  - name: gmail
+    description: Gmail OAuth and auto-import
   - name: transactions
     description: Transaction management
   - name: categories
@@ -35,6 +39,170 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /auth/user:
+    get:
+      operationId: getCurrentAuthUser
+      tags: [auth]
+      summary: Get currently authenticated user
+      responses:
+        "200":
+          description: Auth state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUserEnvelope"
+
+  /login:
+    get:
+      operationId: beginBrowserLogin
+      tags: [auth]
+      summary: Start OIDC login flow
+      parameters:
+        - name: returnTo
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "302":
+          description: Redirect to OIDC
+
+  /callback:
+    get:
+      operationId: handleBrowserLoginCallback
+      tags: [auth]
+      summary: OIDC callback
+      parameters:
+        - name: code
+          in: query
+          schema: { type: string }
+        - name: state
+          in: query
+          schema: { type: string }
+      responses:
+        "302":
+          description: Redirect after login
+
+  /logout:
+    get:
+      operationId: logoutBrowserSession
+      tags: [auth]
+      summary: Logout
+      responses:
+        "302":
+          description: Redirect to logout
+
+  /mobile-auth/token-exchange:
+    post:
+      operationId: exchangeMobileAuthorizationCode
+      tags: [auth]
+      summary: Mobile token exchange
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MobileTokenExchangeRequest"
+      responses:
+        "200":
+          description: Session token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MobileTokenExchangeSuccess"
+
+  /mobile-auth/logout:
+    post:
+      operationId: logoutMobileSession
+      tags: [auth]
+      summary: Mobile logout
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogoutSuccess"
+
+  /gmail/auth-url:
+    get:
+      operationId: getGmailAuthUrl
+      tags: [gmail]
+      summary: Get Gmail OAuth authorization URL
+      responses:
+        "200":
+          description: OAuth URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url:
+                    type: string
+                required: [url]
+
+  /gmail/callback:
+    get:
+      operationId: handleGmailCallback
+      tags: [gmail]
+      summary: Handle Gmail OAuth callback
+      parameters:
+        - name: code
+          in: query
+          schema: { type: string }
+        - name: state
+          in: query
+          schema: { type: string }
+        - name: error
+          in: query
+          schema: { type: string }
+      responses:
+        "302":
+          description: Redirect after Gmail auth
+
+  /gmail/status:
+    get:
+      operationId: getGmailStatus
+      tags: [gmail]
+      summary: Get Gmail connection status
+      responses:
+        "200":
+          description: Gmail connection status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GmailStatus"
+
+  /gmail/disconnect:
+    delete:
+      operationId: disconnectGmail
+      tags: [gmail]
+      summary: Disconnect Gmail
+      responses:
+        "200":
+          description: Disconnected
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                required: [success]
+
+  /gmail/sync:
+    post:
+      operationId: triggerGmailSync
+      tags: [gmail]
+      summary: Manually trigger Gmail transaction import
+      responses:
+        "200":
+          description: Sync result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GmailSyncResult"
 
   /transactions:
     get:
@@ -1110,4 +1278,106 @@ components:
             $ref: "#/components/schemas/Transaction"
       required:
         - imported
+        - transactions
+
+    AuthUser:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          nullable: true
+        firstName:
+          type: string
+          nullable: true
+        lastName:
+          type: string
+          nullable: true
+        profileImageUrl:
+          type: string
+          nullable: true
+      required:
+        - id
+
+    AuthUserEnvelope:
+      type: object
+      properties:
+        user:
+          oneOf:
+            - $ref: "#/components/schemas/AuthUser"
+            - type: "null"
+      required:
+        - user
+
+    MobileTokenExchangeRequest:
+      type: object
+      properties:
+        code:
+          type: string
+        code_verifier:
+          type: string
+        redirect_uri:
+          type: string
+        state:
+          type: string
+        nonce:
+          type: string
+      required:
+        - code
+        - code_verifier
+        - redirect_uri
+        - state
+
+    MobileTokenExchangeSuccess:
+      type: object
+      properties:
+        token:
+          type: string
+      required:
+        - token
+
+    LogoutSuccess:
+      type: object
+      properties:
+        success:
+          type: boolean
+      required:
+        - success
+
+    GmailStatus:
+      type: object
+      properties:
+        connected:
+          type: boolean
+        email:
+          type: string
+          nullable: true
+        lastSyncAt:
+          type: string
+          format: date-time
+          nullable: true
+        autoSyncEnabled:
+          type: boolean
+      required:
+        - connected
+        - autoSyncEnabled
+
+    GmailSyncResult:
+      type: object
+      properties:
+        imported:
+          type: integer
+        skipped:
+          type: integer
+        errors:
+          type: integer
+        transactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Transaction"
+      required:
+        - imported
+        - skipped
+        - errors
         - transactions

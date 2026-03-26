@@ -393,6 +393,71 @@ export interface EmailImportResult {
   transactions: Transaction[];
 }
 
+export interface AuthUser {
+  id: string;
+  email?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  profileImageUrl?: string | null;
+}
+
+export interface AuthUserEnvelope {
+  user: AuthUser | null;
+}
+
+export interface MobileTokenExchangeRequest {
+  code: string;
+  code_verifier: string;
+  redirect_uri: string;
+  state: string;
+  nonce?: string;
+}
+
+export interface MobileTokenExchangeSuccess {
+  token: string;
+}
+
+export interface LogoutSuccess {
+  success: boolean;
+}
+
+export interface GmailStatus {
+  connected: boolean;
+  email?: string | null;
+  lastSyncAt?: string | null;
+  autoSyncEnabled: boolean;
+}
+
+export interface GmailSyncResult {
+  imported: number;
+  skipped: number;
+  errors: number;
+  transactions: Transaction[];
+}
+
+export type BeginBrowserLoginParams = {
+  returnTo?: string;
+};
+
+export type HandleBrowserLoginCallbackParams = {
+  code?: string;
+  state?: string;
+};
+
+export type GetGmailAuthUrl200 = {
+  url: string;
+};
+
+export type HandleGmailCallbackParams = {
+  code?: string;
+  state?: string;
+  error?: string;
+};
+
+export type DisconnectGmail200 = {
+  success: boolean;
+};
+
 export type ListTransactionsParams = {
   accountId?: string;
   categoryId?: string;

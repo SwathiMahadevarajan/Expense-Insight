@@ -1,5 +1,7 @@
 import { Router, type IRouter } from "express";
 import healthRouter from "./health";
+import authRouter from "./auth";
+import gmailRouter from "./gmail";
 import transactionsRouter from "./transactions";
 import categoriesRouter from "./categories";
 import accountsRouter from "./accounts";
@@ -10,6 +12,8 @@ import emailImportRouter from "./email-import";
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use(authRouter);
+router.use(gmailRouter);
 router.use(transactionsRouter);
 router.use(categoriesRouter);
 router.use(accountsRouter);

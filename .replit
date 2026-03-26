@@ -27,3 +27,9 @@ timeoutMs = 20000
 
 [nix]
 channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+APP_BASE_URL = "https://eb9653ad-7025-4b1e-8d47-f00dbb6fd728-00-38py2vbb0v4lu.worf.replit.dev"
+GOOGLE_REDIRECT_URI = "https://eb9653ad-7025-4b1e-8d47-f00dbb6fd728-00-38py2vbb0v4lu.worf.replit.dev/api/gmail/callback"

@@ -1,9 +1,11 @@
-import { pgTable, text, boolean, timestamp, uuid, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, boolean, timestamp, uuid, integer, varchar } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { usersTable } from "./auth";
 
 export const notificationsTable = pgTable("notifications", {
   id: uuid("id").primaryKey().defaultRandom(),
+  userId: varchar("user_id").references(() => usersTable.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   message: text("message").notNull(),
   type: text("type", {

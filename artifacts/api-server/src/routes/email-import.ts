@@ -156,6 +156,7 @@ function parseEmailContent(emailContent: string, emailSubject?: string | null): 
 }
 
 router.post("/email-import/parse", async (req, res) => {
+  if (!req.isAuthenticated()) { res.status(401).json({ error: "Unauthorized" }); return; }
   try {
     const body = ParseEmailTransactionBody.parse(req.body);
 
@@ -193,6 +194,7 @@ router.post("/email-import/parse", async (req, res) => {
 });
 
 router.post("/email-import/import", async (req, res) => {
+  if (!req.isAuthenticated()) { res.status(401).json({ error: "Unauthorized" }); return; }
   try {
     const body = ImportEmailTransactionsBody.parse(req.body);
 
@@ -201,6 +203,7 @@ router.post("/email-import/import", async (req, res) => {
       .values(
         body.transactions.map((tx) => ({
           ...tx,
+          userId: req.user.id,
           date: new Date(tx.date),
           importSource: "email" as const,
         }))
