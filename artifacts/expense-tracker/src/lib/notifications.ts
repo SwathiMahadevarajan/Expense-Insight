@@ -1,3 +1,7 @@
+const APP_NAME = "SmartTrack";
+const APP_ICON = "/icons/icon-192.png";
+const APP_BADGE = "/icons/icon-72.png";
+
 export async function requestNotificationPermission(): Promise<boolean> {
   if (!("Notification" in window)) return false;
   if (Notification.permission === "granted") return true;
@@ -6,13 +10,25 @@ export async function requestNotificationPermission(): Promise<boolean> {
   return result === "granted";
 }
 
-export function sendLocalNotification(title: string, body: string, icon = "/icons/icon-192.png") {
+export function sendLocalNotification(title: string, body: string, icon = APP_ICON) {
   if (!("Notification" in window) || Notification.permission !== "granted") return;
-  new Notification(title, { body, icon, badge: "/icons/icon-72.png" });
+  new Notification(`${APP_NAME} · ${title}`, {
+    body,
+    icon,
+    badge: APP_BADGE,
+    tag: "smarttrack-notification",
+  });
+}
+
+export function sendTransactionNotification(description: string, amount: string, type: "income" | "expense") {
+  const emoji = type === "income" ? "💰" : "💸";
+  sendLocalNotification(
+    `${emoji} ${type === "income" ? "Money received" : "Expense recorded"}`,
+    `${description} · ${amount}`
+  );
 }
 
 export function scheduleNotifications(notifications: Array<{ title: string; message: string; time: string; frequency: string; isActive: boolean }>) {
-  // Clear any existing scheduled notifications interval
   const existingId = (window as unknown as Record<string, unknown>)._notifInterval;
   if (existingId) clearInterval(existingId as number);
 
@@ -21,7 +37,7 @@ export function scheduleNotifications(notifications: Array<{ title: string; mess
   const checkAndNotify = () => {
     const now = new Date();
     const currentTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-    const today = now.getDay(); // 0 = Sunday
+    const today = now.getDay();
     const dayOfMonth = now.getDate();
 
     for (const notif of notifications) {
@@ -30,14 +46,13 @@ export function scheduleNotifications(notifications: Array<{ title: string; mess
 
       let shouldFire = false;
       if (notif.frequency === "daily") shouldFire = true;
-      else if (notif.frequency === "weekly" && today === 1) shouldFire = true; // Monday
+      else if (notif.frequency === "weekly" && today === 1) shouldFire = true;
       else if (notif.frequency === "monthly" && dayOfMonth === 1) shouldFire = true;
 
       if (shouldFire) sendLocalNotification(notif.title, notif.message);
     }
   };
 
-  // Check every minute
   const intervalId = setInterval(checkAndNotify, 60000);
   (window as unknown as Record<string, unknown>)._notifInterval = intervalId;
 }

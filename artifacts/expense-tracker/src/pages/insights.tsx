@@ -168,9 +168,9 @@ export default function Insights() {
                         </div>
                       </TableCell>
                       <TableCell className="text-right font-semibold">{formatCurrency(cat.amount)}</TableCell>
-                      <TableCell className="text-right text-muted-foreground hidden sm:table-cell">{cat.count}</TableCell>
+                      <TableCell className="text-right text-muted-foreground hidden sm:table-cell">{cat.transactionCount}</TableCell>
                       <TableCell className="text-right text-muted-foreground hidden sm:table-cell">
-                        {cat.count > 0 ? formatCurrency(cat.amount / cat.count) : "—"}
+                        {cat.transactionCount > 0 ? formatCurrency(cat.amount / cat.transactionCount) : "—"}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
@@ -189,7 +189,10 @@ export default function Insights() {
               {/* Totals row */}
               <div className="flex items-center justify-between pt-3 px-4 border-t mt-1">
                 <span className="text-sm font-semibold">Total</span>
-                <span className="text-sm font-bold">{formatCurrency(byCategory.data.reduce((s, c) => s + c.amount, 0))}</span>
+                <div className="flex items-center gap-6 text-sm">
+                  <span className="text-muted-foreground hidden sm:inline">{byCategory.data.reduce((s, c) => s + c.transactionCount, 0)} txns</span>
+                  <span className="font-bold">{formatCurrency(byCategory.data.reduce((s, c) => s + c.amount, 0))}</span>
+                </div>
               </div>
             </div>
           )}

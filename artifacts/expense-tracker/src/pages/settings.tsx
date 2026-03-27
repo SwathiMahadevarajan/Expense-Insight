@@ -6,13 +6,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Trash2, Edit2, Plus, Bell, Tags, Mail, CheckCircle2, XCircle, RefreshCw, User, LogOut, Download, Upload, Smartphone } from "lucide-react";
+import { Trash2, Edit2, Plus, Bell, Tags, Mail, CheckCircle2, XCircle, RefreshCw, User, LogOut, Download, Upload, Smartphone, ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useGoogleAuth } from "@/lib/google-auth";
 import { syncGmail, getGmailStatus } from "@/lib/gmail";
 import { exportBackup, importBackup } from "@/lib/db";
-import { requestNotificationPermission } from "@/lib/notifications";
+import { requestNotificationPermission, sendLocalNotification } from "@/lib/notifications";
 import { useCategories, createCategory, updateCategory, deleteCategory } from "@/hooks/use-local-categories";
 import { useNotificationSettings, createNotification, deleteNotification } from "@/hooks/use-local-notifications";
 import { useLiveQuery } from "dexie-react-hooks";
@@ -90,6 +90,60 @@ function AccountSection() {
   );
 }
 
+function OAuthSetupGuide() {
+  const [open, setOpen] = React.useState(false);
+  const steps = [
+    { n: 1, title: "Open Google Cloud Console", body: "Go to console.cloud.google.com and sign in with your Google account." },
+    { n: 2, title: "Create or select a project", body: 'Click the project dropdown at the top → "New Project" → give it a name like "SmartTrack" → Create.' },
+    { n: 3, title: "Enable Gmail API", body: 'In the left menu go to "APIs & Services" → "Library" → search "Gmail API" → click Enable.' },
+    { n: 4, title: "Configure OAuth consent screen", body: 'Go to "APIs & Services" → "OAuth consent screen" → choose "External" → fill in App name (SmartTrack), your email, and save. Add the scope: gmail.readonly.' },
+    { n: 5, title: "Create OAuth credentials", body: 'Go to "APIs & Services" → "Credentials" → "+ Create Credentials" → "OAuth client ID" → Application type: Web application.' },
+    { n: 6, title: "Add your app URL as Authorized JS origin", body: "In the Authorized JavaScript origins field, add your app's URL (the browser address bar URL). No trailing slash." },
+    { n: 7, title: "Copy the Client ID", body: 'After creating, copy the Client ID (ends in .apps.googleusercontent.com). You will need it in the next step.' },
+    { n: 8, title: "Set VITE_GOOGLE_CLIENT_ID", body: 'In your Replit project, go to the Secrets panel, create a secret named VITE_GOOGLE_CLIENT_ID and paste the Client ID. Restart the app. That\'s it!' },
+  ];
+
+  return (
+    <div className="border rounded-xl overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted/30 transition-colors"
+      >
+        <span className="flex items-center gap-2">
+          {open ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+          How to set up Google OAuth (free, step-by-step)
+        </span>
+        <Badge variant="outline" className="text-[10px] bg-green-50 text-green-700 border-green-200">Free forever</Badge>
+      </button>
+      {open && (
+        <div className="px-4 pb-5 pt-2 border-t space-y-4">
+          <p className="text-xs text-muted-foreground">The Gmail API's free quota (1 billion units/day) is more than enough for personal use. No billing required.</p>
+          <ol className="space-y-3">
+            {steps.map(s => (
+              <li key={s.n} className="flex gap-3">
+                <span className="w-5 h-5 rounded-full bg-green-100 text-green-700 text-[11px] font-bold flex-shrink-0 flex items-center justify-center mt-0.5">{s.n}</span>
+                <div>
+                  <p className="text-sm font-medium">{s.title}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{s.body}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+          <a
+            href="https://console.cloud.google.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:underline"
+          >
+            <ExternalLink className="w-3 h-3" /> Open Google Cloud Console
+          </a>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function GmailSection() {
   const { toast } = useToast();
   const { isAuthenticated, accessToken, login } = useGoogleAuth();
@@ -97,7 +151,6 @@ function GmailSection() {
   const [lastSync, setLastSync] = React.useState<Date | null>(null);
   const [syncResult, setSyncResult] = React.useState<{ imported: number; skipped: number; errors: number } | null>(null);
 
-  // Date range for targeted sync
   const defaultFrom = new Date();
   defaultFrom.setMonth(defaultFrom.getMonth() - 1);
   const [fromDate, setFromDate] = React.useState(defaultFrom.toISOString().split("T")[0]);
@@ -234,6 +287,7 @@ function GmailSection() {
             </Button>
           </div>
         )}
+        <OAuthSetupGuide />
       </CardContent>
     </Card>
   );
@@ -298,7 +352,7 @@ function PWASection() {
     setNotifPermission(Notification.permission);
     if (granted) {
       toast({ title: "Notifications enabled!" });
-      new Notification("SmartTrack", { body: "You'll now receive expense reminders.", icon: "/icons/icon-192.png" });
+      sendLocalNotification("Notifications enabled", "You'll now receive expense reminders and alerts here.");
     } else {
       toast({ title: "Notifications not allowed. Enable them in your browser/device settings.", variant: "destructive" });
     }

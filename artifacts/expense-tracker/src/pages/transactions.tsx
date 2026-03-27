@@ -5,29 +5,63 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowDownRight, ArrowUpRight, Search, Plus, Trash2, Edit2, Mail } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Search, Plus, Trash2, Edit2, Download, ArrowUpDown, Filter } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { TransactionDialog } from "@/components/transaction-dialog";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { generateId } from "@/lib/db";
+
+type SortField = "date" | "amount" | "description";
+type SortDir = "asc" | "desc";
+type TypeFilter = "all" | "income" | "expense";
 
 export default function Transactions() {
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = React.useState("");
-  const { data, isLoading } = useTransactions({ limit: 200 });
+  const [typeFilter, setTypeFilter] = React.useState<TypeFilter>("all");
+  const [sortField, setSortField] = React.useState<SortField>("date");
+  const [sortDir, setSortDir] = React.useState<SortDir>("desc");
+  const { data, isLoading } = useTransactions({ limit: 500 });
   const [txToEdit, setTxToEdit] = React.useState<any>(null);
   const [isAddOpen, setIsAddOpen] = React.useState(false);
-  const [isEmailOpen, setIsEmailOpen] = React.useState(false);
-  const [emailText, setEmailText] = React.useState("");
-  const [isParsing, setIsParsing] = React.useState(false);
 
-  const filteredTxs = data?.transactions.filter(tx =>
-    tx.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    tx.merchantName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    tx.categoryName?.toLowerCase().includes(searchTerm.toLowerCase())
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDir(d => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortDir("desc");
+    }
+  };
+
+  const sortedFiltered = React.useMemo(() => {
+    let txs = data?.transactions ?? [];
+    if (searchTerm) {
+      const q = searchTerm.toLowerCase();
+      txs = txs.filter(tx =>
+        tx.description.toLowerCase().includes(q) ||
+        tx.merchantName?.toLowerCase().includes(q) ||
+        tx.categoryName?.toLowerCase().includes(q)
+      );
+    }
+    if (typeFilter !== "all") txs = txs.filter(tx => tx.type === typeFilter);
+    txs = [...txs].sort((a, b) => {
+      let cmp = 0;
+      if (sortField === "date") cmp = a.date.localeCompare(b.date);
+      else if (sortField === "amount") cmp = a.amount - b.amount;
+      else if (sortField === "description") cmp = a.description.localeCompare(b.description);
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+    return txs;
+  }, [data, searchTerm, typeFilter, sortField, sortDir]);
+
+  const totalShown = sortedFiltered.reduce(
+    (acc, tx) => {
+      if (tx.type === "income") acc.income += tx.amount;
+      else acc.expense += tx.amount;
+      return acc;
+    },
+    { income: 0, expense: 0 }
   );
 
   const handleDelete = async (id: string) => {
@@ -40,55 +74,40 @@ export default function Transactions() {
     }
   };
 
-  const handleParseEmail = async () => {
-    if (!emailText.trim()) return;
-    setIsParsing(true);
-    try {
-      const text = emailText;
-      const isDebit = /debited|payment|spent|charged|purchase|withdrew/i.test(text);
-      const isCredit = /credited|received|refund|cashback|salary/i.test(text);
-
-      const amountMatch = text.match(/(?:Rs\.?|INR|₹)\s*([0-9,]+(?:\.[0-9]{1,2})?)/i);
-      if (!amountMatch) {
-        toast({ title: "No amount found in this email", variant: "destructive" });
-        setIsParsing(false);
-        return;
-      }
-
-      const amount = parseFloat(amountMatch[1].replace(/,/g, ""));
-      const type: "income" | "expense" = isCredit && !isDebit ? "income" : "expense";
-
-      let merchantName: string | null = null;
-      const merchantMatch = text.match(/(?:at|to|from)\s+([A-Z][A-Za-z0-9\s&'.-]{2,40}?)(?:\s+on|\s+via|\s+UPI|\s*\.|\s*$)/i);
-      if (merchantMatch) merchantName = merchantMatch[1].trim().slice(0, 60);
-
-      const description = merchantName
-        ? `${type === "expense" ? "Payment to" : "Receipt from"} ${merchantName}`
-        : text.slice(0, 80);
-
-      const now = new Date().toISOString();
-      await createTransaction({
-        amount,
-        type,
-        description,
-        merchantName,
-        date: now,
-        categoryId: null,
-        accountId: null,
-        notes: null,
-        importSource: "email",
-        gmailMessageId: null,
-      });
-
-      toast({ title: `Imported ${type} of ${formatCurrency(amount)}` });
-      setIsEmailOpen(false);
-      setEmailText("");
-    } catch (e) {
-      toast({ title: "Failed to parse email", variant: "destructive" });
-    } finally {
-      setIsParsing(false);
-    }
+  const handleExportCSV = () => {
+    const rows = [
+      ["Date", "Description", "Merchant", "Category", "Account", "Type", "Amount (₹)", "Source"],
+      ...sortedFiltered.map(tx => [
+        tx.date.split("T")[0],
+        tx.description,
+        tx.merchantName ?? "",
+        tx.categoryName ?? "",
+        tx.accountName ?? "",
+        tx.type,
+        tx.amount.toFixed(2),
+        tx.importSource ?? "manual",
+      ]),
+    ];
+    const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `smarttrack-transactions-${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast({ title: `Exported ${sortedFiltered.length} transactions` });
   };
+
+  const SortBtn = ({ field, label }: { field: SortField; label: string }) => (
+    <button
+      className="flex items-center gap-1 hover:text-foreground transition-colors"
+      onClick={() => handleSort(field)}
+    >
+      {label}
+      <ArrowUpDown className={`w-3 h-3 ${sortField === field ? "text-green-500" : "text-muted-foreground/50"}`} />
+    </button>
+  );
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -98,8 +117,8 @@ export default function Transactions() {
           <p className="text-muted-foreground mt-1">{data?.total ?? 0} total transactions</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => setIsEmailOpen(true)}>
-            <Mail className="w-4 h-4 mr-2" /> Paste Email
+          <Button variant="outline" size="sm" onClick={handleExportCSV} title="Export as CSV">
+            <Download className="w-4 h-4 mr-2" /> Export CSV
           </Button>
           <Button size="sm" className="bg-green-500 hover:bg-green-600 text-white" onClick={() => { setTxToEdit(null); setIsAddOpen(true); }}>
             <Plus className="w-4 h-4 mr-2" /> Add
@@ -107,24 +126,51 @@ export default function Transactions() {
         </div>
       </div>
 
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input
-          placeholder="Search transactions..."
-          value={searchTerm}
-          onChange={e => setSearchTerm(e.target.value)}
-          className="pl-9"
-        />
+      {/* Filters row */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder="Search transactions..."
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <Select value={typeFilter} onValueChange={v => setTypeFilter(v as TypeFilter)}>
+          <SelectTrigger className="w-full sm:w-[140px]">
+            <Filter className="w-4 h-4 mr-2 text-muted-foreground" />
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All types</SelectItem>
+            <SelectItem value="income">Income only</SelectItem>
+            <SelectItem value="expense">Expenses only</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
+
+      {/* Quick totals for filtered view */}
+      {sortedFiltered.length > 0 && (
+        <div className="flex gap-4 text-sm px-1">
+          <span className="text-muted-foreground">{sortedFiltered.length} shown</span>
+          {(typeFilter === "all" || typeFilter === "income") && totalShown.income > 0 && (
+            <span className="text-emerald-600 font-medium">+{formatCurrency(totalShown.income)}</span>
+          )}
+          {(typeFilter === "all" || typeFilter === "expense") && totalShown.expense > 0 && (
+            <span className="text-red-500 font-medium">−{formatCurrency(totalShown.expense)}</span>
+          )}
+        </div>
+      )}
 
       {isLoading ? (
         <div className="space-y-2">
           {Array.from({length: 5}).map((_, i) => <div key={i} className="h-16 rounded-lg bg-muted/20 animate-pulse" />)}
         </div>
-      ) : !filteredTxs?.length ? (
+      ) : !sortedFiltered.length ? (
         <Card>
           <CardContent className="py-16 text-center text-muted-foreground">
-            {searchTerm ? "No transactions match your search." : "No transactions yet. Add your first one!"}
+            {searchTerm || typeFilter !== "all" ? "No transactions match your filters." : "No transactions yet. Add your first one!"}
           </CardContent>
         </Card>
       ) : (
@@ -132,16 +178,16 @@ export default function Transactions() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Description</TableHead>
+                <TableHead><SortBtn field="description" label="Description" /></TableHead>
                 <TableHead className="hidden sm:table-cell">Category</TableHead>
-                <TableHead className="hidden md:table-cell">Date</TableHead>
+                <TableHead className="hidden md:table-cell"><SortBtn field="date" label="Date" /></TableHead>
                 <TableHead className="hidden md:table-cell">Account</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
+                <TableHead className="text-right"><SortBtn field="amount" label="Amount" /></TableHead>
                 <TableHead className="w-20"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredTxs.map(tx => (
+              {sortedFiltered.map(tx => (
                 <TableRow key={tx.id} className="group">
                   <TableCell>
                     <div className="flex items-center gap-2">
@@ -193,33 +239,6 @@ export default function Transactions() {
         onOpenChange={setIsAddOpen}
         transactionToEdit={txToEdit}
       />
-
-      <Dialog open={isEmailOpen} onOpenChange={setIsEmailOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Paste Bank Email Content</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 pt-2">
-            <p className="text-sm text-muted-foreground">Paste the body of a bank transaction SMS or email below. SmartTrack will extract the amount and merchant automatically.</p>
-            <div className="space-y-2">
-              <Label>Email / SMS Content</Label>
-              <Textarea
-                rows={6}
-                value={emailText}
-                onChange={e => setEmailText(e.target.value)}
-                placeholder="Rs. 1,500 debited from your HDFC Bank account ending 1234 at Swiggy on 26-Mar-2026..."
-                className="resize-none font-mono text-sm"
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setIsEmailOpen(false)}>Cancel</Button>
-              <Button onClick={handleParseEmail} disabled={isParsing || !emailText.trim()} className="bg-green-500 hover:bg-green-600 text-white">
-                {isParsing ? "Parsing..." : "Import Transaction"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
