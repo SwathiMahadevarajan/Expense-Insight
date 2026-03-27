@@ -1,105 +1,88 @@
-# Workspace
+# SmartTrack — Local-First PWA Expense Tracker
 
-## Overview
+## Project Overview
+SmartTrack is a local-first PWA (Progressive Web App) for personal expense tracking, targeting iOS and web. All data is stored in the browser's IndexedDB (Dexie.js). No account or login is required to use the app. Google sign-in is optional, only for Gmail auto-import.
 
-pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
+## Architecture
 
-## Stack
+### Data Layer
+- **IndexedDB** (via Dexie.js) — all transactions, accounts, categories, and notifications stored locally
+- No server-side database for user data
+- JSON backup/restore for data portability
+- `artifacts/expense-tracker/src/lib/db.ts` — Dexie schema, CRUD helpers, export/import functions
 
-- **Monorepo tool**: pnpm workspaces
-- **Node.js version**: 24
-- **Package manager**: pnpm
-- **TypeScript version**: 5.9
-- **API framework**: Express 5
-- **Database**: PostgreSQL + Drizzle ORM
-- **Validation**: Zod (`zod/v4`), `drizzle-zod`
-- **API codegen**: Orval (from OpenAPI spec)
-- **Build**: esbuild (CJS bundle)
+### Auth (Optional)
+- Google OAuth via `@react-oauth/google` (implicit flow)
+- Token stored in `localStorage`, user info in `localStorage`
+- Only needed for Gmail auto-import (readonly access)
+- `VITE_GOOGLE_CLIENT_ID` env var needed for Google features; app works without it
+- `artifacts/expense-tracker/src/lib/google-auth.tsx` — Google OAuth context
 
-## Structure
+### Gmail Integration
+- Direct browser-side Gmail API calls with the user's OAuth token
+- Searches for bank/UPI transaction emails
+- `artifacts/expense-tracker/src/lib/gmail.ts` — Gmail API sync logic
 
-```text
-artifacts-monorepo/
-├── artifacts/              # Deployable applications
-│   ├── api-server/         # Express API server
-│   └── expense-tracker/    # Smart Expense Tracker React web app
-├── lib/                    # Shared libraries
-│   ├── api-spec/           # OpenAPI spec + Orval codegen config
-│   ├── api-client-react/   # Generated React Query hooks
-│   ├── api-zod/            # Generated Zod schemas from OpenAPI
-│   └── db/                 # Drizzle ORM schema + DB connection
-├── scripts/                # Utility scripts
-├── pnpm-workspace.yaml
-├── tsconfig.base.json
-├── tsconfig.json
-└── package.json
-```
+### PWA
+- VitePWA plugin with offline support and installability
+- PWA icons at all sizes in `artifacts/expense-tracker/public/icons/`
+- Service worker handles caching
+- Push notifications via browser `Notification` API (iOS 16.4+ + Home Screen required for iOS)
 
-## Smart Expense Tracker App
+### Frontend
+- **React + TypeScript + Vite** at `artifacts/expense-tracker/`
+- **Tailwind CSS** + **shadcn/ui** components
+- **Recharts** for insights/charts
+- **TanStack Query** for local async state (Dexie queries wrapped as async functions)
+- **Wouter** for routing
+- Green (#22c55e) theme, INR (₹) currency, SmartTrack branding
 
-A full-featured web expense tracker designed for iOS (and all platforms) using email-based transaction import.
+### Backend (Legacy)
+- `artifacts/api-server/` — Express API still running but not used for data
+- Originally used Replit Auth + PostgreSQL; superseded by local-first approach
 
-### Features
-- **Email Import**: Paste bank email content to auto-extract transactions
-- **Categories**: Pre-seeded defaults + custom categories with icons and colors
-- **Accounts**: Multiple payment sources (bank, credit card, cash, wallet) with opening/current balance
-- **Transactions**: Full CRUD with filters by date, category, account, type
-- **Insights & Analytics**: Spending by category (chart), daily trends, income vs expenses, savings rate
-- **Notifications**: Configurable browser-based reminders (daily review, weekly summary, bill alerts)
-- **Currency**: Default INR (₹)
+## Key Files
 
-### DB Tables
-- `categories` — expense/income categories with icon, color
-- `accounts` — payment sources with opening balance
-- `transactions` — all financial transactions (linked to category + account)
-- `notifications` — reminder settings
+| File | Purpose |
+|------|---------|
+| `artifacts/expense-tracker/src/lib/db.ts` | Dexie database, schema, seed, backup/restore |
+| `artifacts/expense-tracker/src/lib/google-auth.tsx` | Google OAuth context provider |
+| `artifacts/expense-tracker/src/lib/gmail.ts` | Gmail API integration |
+| `artifacts/expense-tracker/src/lib/notifications.ts` | Push notification helpers |
+| `artifacts/expense-tracker/src/hooks/use-local-transactions.ts` | Local transaction CRUD hooks |
+| `artifacts/expense-tracker/src/hooks/use-local-accounts.ts` | Local account CRUD hooks |
+| `artifacts/expense-tracker/src/hooks/use-local-categories.ts` | Local category CRUD hooks |
+| `artifacts/expense-tracker/src/hooks/use-local-insights.ts` | Insight computation hooks |
+| `artifacts/expense-tracker/src/hooks/use-local-notifications.ts` | Notification setting hooks |
+| `artifacts/expense-tracker/src/pages/dashboard.tsx` | Dashboard with monthly summary |
+| `artifacts/expense-tracker/src/pages/transactions.tsx` | Transaction list + CRUD + email paste |
+| `artifacts/expense-tracker/src/pages/insights.tsx` | Charts — category breakdown, income vs expenses |
+| `artifacts/expense-tracker/src/pages/accounts.tsx` | Account management |
+| `artifacts/expense-tracker/src/pages/settings.tsx` | Gmail sync, backup/restore, PWA install, categories, alerts |
+| `artifacts/expense-tracker/src/components/transaction-dialog.tsx` | Add/edit transaction modal |
+| `artifacts/expense-tracker/vite.config.ts` | Vite + PWA plugin config |
 
-### API Endpoints (all under /api)
-- `GET/POST /transactions` — list (with filters) and create
-- `PUT/DELETE /transactions/:id`
-- `GET/POST /categories`
-- `PUT/DELETE /categories/:id`
-- `GET/POST /accounts`
-- `PUT/DELETE /accounts/:id`
-- `GET /insights/summary` — stats for period
-- `GET /insights/spending-by-category`
-- `GET /insights/daily-spending`
-- `GET/POST /notifications`
-- `PUT/DELETE /notifications/:id`
-- `POST /email-import/parse` — parse email text → extracted transactions
-- `POST /email-import/import` — bulk import confirmed transactions
+## Dependencies (Key)
+- `dexie` + `dexie-react-hooks` — IndexedDB ORM
+- `@react-oauth/google` — Google OAuth implicit flow
+- `vite-plugin-pwa` — Service worker + PWA manifest
+- `recharts` — Charts
+- `@tanstack/react-query` — Async state management
+- `shadcn/ui` — UI component library
 
-## TypeScript & Composite Projects
+## Environment Variables
+| Var | Purpose | Required |
+|-----|---------|----------|
+| `VITE_GOOGLE_CLIENT_ID` | Google OAuth Client ID for Gmail sync | Optional (app works without) |
+| `DATABASE_URL` | PostgreSQL (used by api-server only) | For api-server only |
 
-Every package extends `tsconfig.base.json` which sets `composite: true`. The root `tsconfig.json` lists all packages as project references.
+## Running the App
+- Frontend workflow: `pnpm --filter @workspace/expense-tracker run dev`
+- Accessible at the preview URL
+- API server (legacy): `pnpm --filter @workspace/api-server run dev`
 
-- **Always typecheck from the root** — run `pnpm run typecheck`
-- **`emitDeclarationOnly`** — only emit `.d.ts` files during typecheck
-- **Project references** — when package A depends on B, A's `tsconfig.json` must list B in its `references`
-
-## Root Scripts
-
-- `pnpm run build` — runs `typecheck` first, then recursively runs `build` in all packages
-- `pnpm run typecheck` — runs `tsc --build --emitDeclarationOnly` using project references
-
-## Packages
-
-### `artifacts/api-server` (`@workspace/api-server`)
-
-Express 5 API server. Routes live in `src/routes/`.
-
-### `artifacts/expense-tracker` (`@workspace/expense-tracker`)
-
-React + Vite frontend. Pages: Dashboard, Transactions, Insights, Accounts, Settings.
-
-### `lib/db` (`@workspace/db`)
-
-Database layer using Drizzle ORM with PostgreSQL.
-
-- `pnpm --filter @workspace/db run push` — apply schema changes
-
-### `lib/api-spec` (`@workspace/api-spec`)
-
-OpenAPI spec + Orval codegen config.
-
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate React Query hooks + Zod schemas
+## User Preferences
+- INR (₹) currency throughout
+- Green (#22c55e) primary color
+- Local-first: no account required
+- iOS PWA support is a priority

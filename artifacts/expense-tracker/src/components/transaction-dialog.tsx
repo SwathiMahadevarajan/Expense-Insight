@@ -4,177 +4,136 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useCreateTransaction, useUpdateTransaction } from "@/hooks/use-transactions";
-import { useListAccounts, useListCategories } from "@workspace/api-client-react";
-import type { Transaction, CreateTransactionInputType } from "@workspace/api-client-react";
+import { createTransaction, updateTransaction } from "@/hooks/use-local-transactions";
+import { useAccounts } from "@/hooks/use-local-accounts";
+import { useCategories } from "@/hooks/use-local-categories";
 import { useToast } from "@/hooks/use-toast";
 
 interface TransactionDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  transactionToEdit?: Transaction;
+  transactionToEdit?: any;
 }
 
 export function TransactionDialog({ open, onOpenChange, transactionToEdit }: TransactionDialogProps) {
   const { toast } = useToast();
-  const createTx = useCreateTransaction();
-  const updateTx = useUpdateTransaction();
-  
-  const { data: accountsData } = useListAccounts();
-  const { data: categoriesData } = useListCategories();
+  const { data: accountsData } = useAccounts();
+  const { data: categoriesData } = useCategories();
+  const [isSaving, setIsSaving] = React.useState(false);
 
-  const [type, setType] = React.useState<CreateTransactionInputType>(
-    (transactionToEdit?.type as CreateTransactionInputType) || "expense"
-  );
-  const [amount, setAmount] = React.useState(transactionToEdit?.amount?.toString() || "");
-  const [description, setDescription] = React.useState(transactionToEdit?.description || "");
-  const [date, setDate] = React.useState(
-    transactionToEdit?.date ? new Date(transactionToEdit.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
-  );
-  const [accountId, setAccountId] = React.useState(transactionToEdit?.accountId || "");
-  const [categoryId, setCategoryId] = React.useState(transactionToEdit?.categoryId || "");
+  const [type, setType] = React.useState<"expense" | "income">("expense");
+  const [amount, setAmount] = React.useState("");
+  const [description, setDescription] = React.useState("");
+  const [date, setDate] = React.useState(new Date().toISOString().split("T")[0]);
+  const [accountId, setAccountId] = React.useState("");
+  const [categoryId, setCategoryId] = React.useState("");
+  const [notes, setNotes] = React.useState("");
 
   React.useEffect(() => {
     if (open) {
       if (transactionToEdit) {
-        setType(transactionToEdit.type as CreateTransactionInputType);
-        setAmount(transactionToEdit.amount.toString());
-        setDescription(transactionToEdit.description);
-        setDate(new Date(transactionToEdit.date).toISOString().split('T')[0]);
-        setAccountId(transactionToEdit.accountId || "");
-        setCategoryId(transactionToEdit.categoryId || "");
+        setType(transactionToEdit.type ?? "expense");
+        setAmount(String(transactionToEdit.amount ?? ""));
+        setDescription(transactionToEdit.description ?? "");
+        setDate(new Date(transactionToEdit.date).toISOString().split("T")[0]);
+        setAccountId(transactionToEdit.accountId ?? "");
+        setCategoryId(transactionToEdit.categoryId ?? "");
+        setNotes(transactionToEdit.notes ?? "");
       } else {
         setType("expense");
         setAmount("");
         setDescription("");
-        setDate(new Date().toISOString().split('T')[0]);
+        setDate(new Date().toISOString().split("T")[0]);
         setAccountId("");
         setCategoryId("");
+        setNotes("");
       }
     }
   }, [open, transactionToEdit]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!amount || !description || !date) return;
-
-    const payload = {
-      amount: parseFloat(amount),
-      type,
-      description,
-      date: new Date(date).toISOString(),
-      accountId: accountId || null,
-      categoryId: categoryId || null,
-      importSource: "manual" as const,
-    };
-
-    if (transactionToEdit) {
-      updateTx.mutate(
-        { id: transactionToEdit.id, data: payload },
-        {
-          onSuccess: () => {
-            toast({ title: "Transaction updated" });
-            onOpenChange(false);
-          },
-          onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
-        }
-      );
-    } else {
-      createTx.mutate(
-        { data: payload },
-        {
-          onSuccess: () => {
-            toast({ title: "Transaction created" });
-            onOpenChange(false);
-          },
-          onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
-        }
-      );
+    setIsSaving(true);
+    try {
+      const payload = {
+        amount: parseFloat(amount),
+        type,
+        description,
+        date: new Date(date).toISOString(),
+        accountId: accountId && accountId !== "none" ? accountId : null,
+        categoryId: categoryId && categoryId !== "none" ? categoryId : null,
+        notes: notes || null,
+        merchantName: null,
+        importSource: "manual" as const,
+        gmailMessageId: null,
+      };
+      if (transactionToEdit) {
+        await updateTransaction(transactionToEdit.id, payload);
+        toast({ title: "Transaction updated" });
+      } else {
+        await createTransaction(payload);
+        toast({ title: "Transaction added" });
+      }
+      onOpenChange(false);
+    } catch (err) {
+      toast({ title: "Error saving transaction", variant: "destructive" });
+    } finally {
+      setIsSaving(false);
     }
   };
-
-  const isPending = createTx.isPending || updateTx.isPending;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>{transactionToEdit ? "Edit Transaction" : "New Transaction"}</DialogTitle>
-          <DialogDescription>
-            Enter the details of your transaction below.
-          </DialogDescription>
+          <DialogDescription>Enter transaction details below.</DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4 pt-4">
-          <div className="grid grid-cols-2 gap-4">
-            <Button
-              type="button"
-              variant={type === "expense" ? "default" : "outline"}
-              className={type === "expense" ? "bg-destructive hover:bg-destructive/90" : ""}
-              onClick={() => setType("expense")}
-            >
+        <form onSubmit={handleSubmit} className="space-y-4 pt-2">
+          <div className="grid grid-cols-2 gap-3">
+            <Button type="button" variant={type === "expense" ? "default" : "outline"}
+              className={type === "expense" ? "bg-red-500 hover:bg-red-600 text-white" : ""}
+              onClick={() => setType("expense")}>
               Expense
             </Button>
-            <Button
-              type="button"
-              variant={type === "income" ? "default" : "outline"}
+            <Button type="button" variant={type === "income" ? "default" : "outline"}
               className={type === "income" ? "bg-emerald-600 hover:bg-emerald-700 text-white" : ""}
-              onClick={() => setType("income")}
-            >
+              onClick={() => setType("income")}>
               Income
             </Button>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="amount">Amount</Label>
-            <Input
-              id="amount"
-              type="number"
-              step="0.01"
-              required
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="0.00"
-              className="text-lg"
-            />
+            <Label>Amount (₹)</Label>
+            <Input type="number" step="0.01" required min="0.01"
+              value={amount} onChange={e => setAmount(e.target.value)}
+              placeholder="0.00" className="text-lg font-medium" />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="description">Description</Label>
-            <Input
-              id="description"
-              required
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="E.g., Groceries, Salary, Coffee"
-            />
+            <Label>Description</Label>
+            <Input required value={description} onChange={e => setDescription(e.target.value)}
+              placeholder="e.g. Grocery shopping" />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label htmlFor="date">Date</Label>
-              <Input
-                id="date"
-                type="date"
-                required
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-              />
+              <Label>Date</Label>
+              <Input type="date" required value={date} onChange={e => setDate(e.target.value)} />
             </div>
-            
             <div className="space-y-2">
               <Label>Category</Label>
               <Select value={categoryId} onValueChange={setCategoryId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select..." />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="None" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">None</SelectItem>
-                  {categoriesData?.categories.filter(c => c.type === type || c.type === 'both').map((cat) => (
-                    <SelectItem key={cat.id} value={cat.id}>
-                      {cat.icon} {cat.name}
-                    </SelectItem>
-                  ))}
+                  {categoriesData?.categories
+                    .filter(c => c.type === type || c.type === "both")
+                    .map(cat => (
+                      <SelectItem key={cat.id} value={cat.id}>{cat.icon} {cat.name}</SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>
@@ -183,26 +142,25 @@ export function TransactionDialog({ open, onOpenChange, transactionToEdit }: Tra
           <div className="space-y-2">
             <Label>Account</Label>
             <Select value={accountId} onValueChange={setAccountId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select account..." />
-              </SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="No account" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">None</SelectItem>
-                {accountsData?.accounts.map((acc) => (
-                  <SelectItem key={acc.id} value={acc.id}>
-                    {acc.name}
-                  </SelectItem>
+                <SelectItem value="none">No account</SelectItem>
+                {accountsData?.accounts.map(acc => (
+                  <SelectItem key={acc.id} value={acc.id}>{acc.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
 
-          <div className="pt-4 flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isPending} className="hover-elevate">
-              {isPending ? "Saving..." : "Save Transaction"}
+          <div className="space-y-2">
+            <Label>Notes (optional)</Label>
+            <Input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Any extra notes..." />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="submit" disabled={isSaving} className="bg-green-500 hover:bg-green-600 text-white">
+              {isSaving ? "Saving…" : "Save"}
             </Button>
           </div>
         </form>

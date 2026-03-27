@@ -1,277 +1,222 @@
 import React from "react";
-import { useListTransactions, type ParsedTransaction } from "@workspace/api-client-react";
+import { useTransactions, createTransaction, deleteTransaction } from "@/hooks/use-local-transactions";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
-} from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ArrowDownRight, ArrowUpRight, Search, Mail, Edit2, Trash2 } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ArrowDownRight, ArrowUpRight, Search, Plus, Trash2, Edit2, Mail } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { useDeleteTransaction } from "@/hooks/use-transactions";
-import { useParseEmailTransaction, useImportEmailTransactions } from "@/hooks/use-email-import";
 import { useToast } from "@/hooks/use-toast";
-import { TransactionDialog } from "../components/transaction-dialog";
+import { TransactionDialog } from "@/components/transaction-dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { generateId } from "@/lib/db";
 
 export default function Transactions() {
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = React.useState("");
-  const { data, isLoading } = useListTransactions({ limit: 100 });
-  const deleteTx = useDeleteTransaction();
-  
+  const { data, isLoading } = useTransactions({ limit: 200 });
   const [txToEdit, setTxToEdit] = React.useState<any>(null);
-  const [isEmailModalOpen, setIsEmailModalOpen] = React.useState(false);
-  const [emailContent, setEmailContent] = React.useState("");
-  
-  const parseEmail = useParseEmailTransaction();
-  const importEmails = useImportEmailTransactions();
-  const [parsedTxs, setParsedTxs] = React.useState<ParsedTransaction[]>([]);
+  const [isAddOpen, setIsAddOpen] = React.useState(false);
+  const [isEmailOpen, setIsEmailOpen] = React.useState(false);
+  const [emailText, setEmailText] = React.useState("");
+  const [isParsing, setIsParsing] = React.useState(false);
 
-  const filteredTxs = data?.transactions.filter(tx => 
-    tx.description.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    tx.merchantName?.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredTxs = data?.transactions.filter(tx =>
+    tx.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    tx.merchantName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    tx.categoryName?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleDelete = (id: string) => {
-    if (confirm("Are you sure you want to delete this transaction?")) {
-      deleteTx.mutate({ id }, {
-        onSuccess: () => toast({ title: "Deleted successfully" }),
-        onError: () => toast({ title: "Error deleting", variant: "destructive" })
-      });
+  const handleDelete = async (id: string) => {
+    if (!confirm("Delete this transaction?")) return;
+    try {
+      await deleteTransaction(id);
+      toast({ title: "Deleted" });
+    } catch {
+      toast({ title: "Failed to delete", variant: "destructive" });
     }
   };
 
-  const handleParseEmail = () => {
-    if (!emailContent.trim()) return;
-    parseEmail.mutate(
-      { data: { emailContent } },
-      {
-        onSuccess: (res) => {
-          if (res.transactions.length > 0) {
-            setParsedTxs(res.transactions);
-            toast({ title: `Found ${res.transactions.length} transactions` });
-          } else {
-            toast({ title: "No transactions found in text", variant: "destructive" });
-          }
-        },
-        onError: () => toast({ title: "Failed to parse", variant: "destructive" })
-      }
-    );
-  };
+  const handleParseEmail = async () => {
+    if (!emailText.trim()) return;
+    setIsParsing(true);
+    try {
+      const text = emailText;
+      const isDebit = /debited|payment|spent|charged|purchase|withdrew/i.test(text);
+      const isCredit = /credited|received|refund|cashback|salary/i.test(text);
 
-  const handleImportEmails = () => {
-    if (parsedTxs.length === 0) return;
-    
-    const mappedTxs = parsedTxs.map(pt => ({
-      amount: pt.amount,
-      type: pt.type,
-      description: pt.description,
-      merchantName: pt.merchantName,
-      date: pt.date,
-      categoryId: pt.suggestedCategoryId,
-      accountId: pt.accountId,
-      importSource: "email" as const
-    }));
-
-    importEmails.mutate(
-      { data: { transactions: mappedTxs } },
-      {
-        onSuccess: (res) => {
-          toast({ title: `Imported ${res.imported} transactions successfully` });
-          setIsEmailModalOpen(false);
-          setEmailContent("");
-          setParsedTxs([]);
-        },
-        onError: () => toast({ title: "Import failed", variant: "destructive" })
+      const amountMatch = text.match(/(?:Rs\.?|INR|₹)\s*([0-9,]+(?:\.[0-9]{1,2})?)/i);
+      if (!amountMatch) {
+        toast({ title: "No amount found in this email", variant: "destructive" });
+        setIsParsing(false);
+        return;
       }
-    );
+
+      const amount = parseFloat(amountMatch[1].replace(/,/g, ""));
+      const type: "income" | "expense" = isCredit && !isDebit ? "income" : "expense";
+
+      let merchantName: string | null = null;
+      const merchantMatch = text.match(/(?:at|to|from)\s+([A-Z][A-Za-z0-9\s&'.-]{2,40}?)(?:\s+on|\s+via|\s+UPI|\s*\.|\s*$)/i);
+      if (merchantMatch) merchantName = merchantMatch[1].trim().slice(0, 60);
+
+      const description = merchantName
+        ? `${type === "expense" ? "Payment to" : "Receipt from"} ${merchantName}`
+        : text.slice(0, 80);
+
+      const now = new Date().toISOString();
+      await createTransaction({
+        amount,
+        type,
+        description,
+        merchantName,
+        date: now,
+        categoryId: null,
+        accountId: null,
+        notes: null,
+        importSource: "email",
+        gmailMessageId: null,
+      });
+
+      toast({ title: `Imported ${type} of ${formatCurrency(amount)}` });
+      setIsEmailOpen(false);
+      setEmailText("");
+    } catch (e) {
+      toast({ title: "Failed to parse email", variant: "destructive" });
+    } finally {
+      setIsParsing(false);
+    }
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Transactions</h1>
-          <p className="text-muted-foreground mt-1">Manage all your income and expenses.</p>
+          <p className="text-muted-foreground mt-1">{data?.total ?? 0} total transactions</p>
         </div>
-        
-        <Button 
-          variant="outline" 
-          className="hover-elevate shadow-sm bg-primary/5 text-primary border-primary/20 hover:bg-primary/10"
-          onClick={() => setIsEmailModalOpen(true)}
-        >
-          <Mail className="w-4 h-4 mr-2" />
-          Smart Email Import
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => setIsEmailOpen(true)}>
+            <Mail className="w-4 h-4 mr-2" /> Paste Email
+          </Button>
+          <Button size="sm" className="bg-green-500 hover:bg-green-600 text-white" onClick={() => { setTxToEdit(null); setIsAddOpen(true); }}>
+            <Plus className="w-4 h-4 mr-2" /> Add
+          </Button>
+        </div>
       </div>
 
-      <Card className="shadow-sm">
-        <CardContent className="p-0">
-          <div className="p-4 border-b flex items-center gap-4 bg-muted/20">
-            <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input 
-                placeholder="Search transactions..." 
-                className="pl-9 bg-background"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-          </div>
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <Input
+          placeholder="Search transactions..."
+          value={searchTerm}
+          onChange={e => setSearchTerm(e.target.value)}
+          className="pl-9"
+        />
+      </div>
 
-          <div className="relative w-full overflow-auto">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/30">
-                  <TableHead>Date</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Account</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+      {isLoading ? (
+        <div className="space-y-2">
+          {Array.from({length: 5}).map((_, i) => <div key={i} className="h-16 rounded-lg bg-muted/20 animate-pulse" />)}
+        </div>
+      ) : !filteredTxs?.length ? (
+        <Card>
+          <CardContent className="py-16 text-center text-muted-foreground">
+            {searchTerm ? "No transactions match your search." : "No transactions yet. Add your first one!"}
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Description</TableHead>
+                <TableHead className="hidden sm:table-cell">Category</TableHead>
+                <TableHead className="hidden md:table-cell">Date</TableHead>
+                <TableHead className="hidden md:table-cell">Account</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
+                <TableHead className="w-20"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredTxs.map(tx => (
+                <TableRow key={tx.id} className="group">
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-sm"
+                        style={{ backgroundColor: tx.categoryColor ? `${tx.categoryColor}20` : "#f1f5f9", color: tx.categoryColor ?? "#94a3b8" }}>
+                        {tx.categoryIcon ?? (tx.importSource === "email" ? "📧" : "💳")}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-medium text-sm truncate">{tx.description}</p>
+                        {tx.merchantName && <p className="text-xs text-muted-foreground truncate">{tx.merchantName}</p>}
+                        <p className="text-xs text-muted-foreground sm:hidden">{formatDate(tx.date)}</p>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="hidden sm:table-cell">
+                    {tx.categoryName && <Badge variant="outline" className="text-xs">{tx.categoryName}</Badge>}
+                  </TableCell>
+                  <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{formatDate(tx.date)}</TableCell>
+                  <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{tx.accountName ?? "—"}</TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      {tx.type === "income"
+                        ? <ArrowUpRight className="w-3.5 h-3.5 text-emerald-500" />
+                        : <ArrowDownRight className="w-3.5 h-3.5 text-red-500" />}
+                      <span className={`font-semibold text-sm ${tx.type === "income" ? "text-emerald-600" : "text-red-500"}`}>
+                        {formatCurrency(tx.amount)}
+                      </span>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => { setTxToEdit(tx); setIsAddOpen(true); }}>
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleDelete(tx.id)}>
+                        <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                      </Button>
+                    </div>
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                      Loading transactions...
-                    </TableCell>
-                  </TableRow>
-                ) : filteredTxs?.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
-                      No transactions found.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  filteredTxs?.map((tx) => (
-                    <TableRow key={tx.id} className="group transition-colors hover:bg-muted/30">
-                      <TableCell className="whitespace-nowrap text-muted-foreground">
-                        {formatDate(tx.date)}
-                      </TableCell>
-                      <TableCell>
-                        <div className="font-medium text-foreground">{tx.description}</div>
-                        {tx.merchantName && (
-                          <div className="text-xs text-muted-foreground">{tx.merchantName}</div>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {tx.categoryName ? (
-                          <Badge variant="secondary" className="font-normal bg-secondary">
-                            <span className="mr-1">{tx.categoryIcon}</span>
-                            {tx.categoryName}
-                          </Badge>
-                        ) : (
-                          <span className="text-muted-foreground text-sm">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-sm">
-                        {tx.accountName || '-'}
-                      </TableCell>
-                      <TableCell className={`text-right font-bold whitespace-nowrap ${tx.type === 'income' ? 'text-emerald-600' : 'text-foreground'}`}>
-                        {tx.type === 'income' ? '+' : '-'}{formatCurrency(tx.amount)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => setTxToEdit(tx)}>
-                            <Edit2 className="w-4 h-4 text-muted-foreground hover:text-primary" />
-                          </Button>
-                          <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => handleDelete(tx.id)}>
-                            <Trash2 className="w-4 h-4 text-muted-foreground hover:text-destructive" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+              ))}
+            </TableBody>
+          </Table>
+        </Card>
+      )}
 
-      <TransactionDialog 
-        open={!!txToEdit} 
-        onOpenChange={(open) => !open && setTxToEdit(null)}
+      <TransactionDialog
+        open={isAddOpen}
+        onOpenChange={setIsAddOpen}
         transactionToEdit={txToEdit}
       />
 
-      {/* Email Import Modal */}
-      <Dialog open={isEmailModalOpen} onOpenChange={setIsEmailModalOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col">
+      <Dialog open={isEmailOpen} onOpenChange={setIsEmailOpen}>
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>Import via Email Text</DialogTitle>
+            <DialogTitle>Paste Bank Email Content</DialogTitle>
           </DialogHeader>
-          
-          <div className="flex-1 overflow-y-auto space-y-4 py-4 pr-2">
-            {parsedTxs.length === 0 ? (
-              <div className="space-y-4 h-full flex flex-col">
-                <p className="text-sm text-muted-foreground">
-                  Paste the content of your bank transaction emails here. Our AI will extract the amount, merchant, date, and suggest a category.
-                </p>
-                <textarea
-                  className="w-full flex-1 min-h-[250px] p-4 rounded-xl border-2 border-border focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all resize-none bg-muted/10 font-mono text-sm"
-                  placeholder="Paste email text here..."
-                  value={emailContent}
-                  onChange={(e) => setEmailContent(e.target.value)}
-                />
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="bg-primary/10 text-primary p-3 rounded-lg text-sm font-medium flex items-center justify-between">
-                  <span>Found {parsedTxs.length} transactions</span>
-                  <Button variant="ghost" size="sm" onClick={() => setParsedTxs([])}>Reset</Button>
-                </div>
-                {parsedTxs.map((pt, i) => (
-                  <div key={i} className="border rounded-xl p-4 bg-card shadow-sm space-y-3">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <p className="font-bold text-lg">{pt.description}</p>
-                        <p className="text-sm text-muted-foreground">{formatDate(pt.date)}</p>
-                      </div>
-                      <div className={`font-bold text-xl ${pt.type === 'income' ? 'text-emerald-600' : 'text-foreground'}`}>
-                        {pt.type === 'income' ? '+' : '-'}{formatCurrency(pt.amount)}
-                      </div>
-                    </div>
-                    {pt.suggestedCategoryName && (
-                      <div className="flex items-center gap-2 text-sm">
-                        <span className="text-muted-foreground">Suggested Category:</span>
-                        <Badge variant="secondary">{pt.suggestedCategoryName}</Badge>
-                        <span className="text-xs text-muted-foreground ml-auto">Confidence: {Math.round(pt.confidence * 100)}%</span>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="pt-4 border-t flex justify-end gap-3 mt-auto">
-            <Button variant="outline" onClick={() => setIsEmailModalOpen(false)}>Cancel</Button>
-            {parsedTxs.length === 0 ? (
-              <Button 
-                onClick={handleParseEmail} 
-                disabled={!emailContent.trim() || parseEmail.isPending}
-              >
-                {parseEmail.isPending ? "Extracting..." : "Extract Transactions"}
+          <div className="space-y-4 pt-2">
+            <p className="text-sm text-muted-foreground">Paste the body of a bank transaction SMS or email below. SmartTrack will extract the amount and merchant automatically.</p>
+            <div className="space-y-2">
+              <Label>Email / SMS Content</Label>
+              <Textarea
+                rows={6}
+                value={emailText}
+                onChange={e => setEmailText(e.target.value)}
+                placeholder="Rs. 1,500 debited from your HDFC Bank account ending 1234 at Swiggy on 26-Mar-2026..."
+                className="resize-none font-mono text-sm"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setIsEmailOpen(false)}>Cancel</Button>
+              <Button onClick={handleParseEmail} disabled={isParsing || !emailText.trim()} className="bg-green-500 hover:bg-green-600 text-white">
+                {isParsing ? "Parsing..." : "Import Transaction"}
               </Button>
-            ) : (
-              <Button 
-                onClick={handleImportEmails}
-                disabled={importEmails.isPending}
-                className="bg-primary hover:bg-primary/90 text-white shadow-lg shadow-primary/25"
-              >
-                {importEmails.isPending ? "Importing..." : `Import ${parsedTxs.length} Transactions`}
-              </Button>
-            )}
+            </div>
           </div>
         </DialogContent>
       </Dialog>

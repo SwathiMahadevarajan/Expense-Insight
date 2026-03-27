@@ -1,204 +1,162 @@
 import React from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { useListCategories, useListNotifications } from "@workspace/api-client-react";
-import { useCreateCategory, useUpdateCategory, useDeleteCategory } from "@/hooks/use-categories";
-import { useCreateNotification, useUpdateNotification, useDeleteNotification } from "@/hooks/use-notifications";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Trash2, Edit2, Plus, Bell, Tags, Mail, CheckCircle2, XCircle, RefreshCw, User, LogOut } from "lucide-react";
+import { Trash2, Edit2, Plus, Bell, Tags, Mail, CheckCircle2, XCircle, RefreshCw, User, LogOut, Download, Upload, Smartphone } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { useAuth } from "@workspace/replit-auth-web";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { Category, CreateCategoryInputType, CreateNotificationInputType, CreateNotificationInputFrequency } from "@workspace/api-client-react";
-
-const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
-
-async function fetchGmailStatus() {
-  const res = await fetch(`${BASE}/api/gmail/status`, { credentials: "include" });
-  if (!res.ok) throw new Error("Failed to fetch Gmail status");
-  return res.json() as Promise<{ connected: boolean; email: string | null; lastSyncAt: string | null }>;
-}
-
-async function fetchGmailAuthUrl() {
-  const res = await fetch(`${BASE}/api/gmail/auth-url`, { credentials: "include" });
-  if (!res.ok) throw new Error("Failed to get Gmail auth URL");
-  return res.json() as Promise<{ url: string }>;
-}
-
-async function disconnectGmail() {
-  const res = await fetch(`${BASE}/api/gmail/disconnect`, { method: "DELETE", credentials: "include" });
-  if (!res.ok) throw new Error("Failed to disconnect Gmail");
-}
-
-async function syncGmail() {
-  const res = await fetch(`${BASE}/api/gmail/sync`, { method: "POST", credentials: "include" });
-  if (!res.ok) throw new Error("Sync failed");
-  return res.json() as Promise<{ imported: number; skipped: number; errors: number }>;
-}
+import { useGoogleAuth } from "@/lib/google-auth";
+import { syncGmail, getGmailStatus } from "@/lib/gmail";
+import { exportBackup, importBackup } from "@/lib/db";
+import { requestNotificationPermission } from "@/lib/notifications";
+import { useCategories, createCategory, updateCategory, deleteCategory } from "@/hooks/use-local-categories";
+import { useNotificationSettings, createNotification, deleteNotification } from "@/hooks/use-local-notifications";
+import { useLiveQuery } from "dexie-react-hooks";
+import { db } from "@/lib/db";
+import type { Category, NotificationSetting } from "@/lib/db";
 
 export default function Settings() {
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
-        <p className="text-muted-foreground mt-1">Configure your app preferences.</p>
+        <p className="text-muted-foreground mt-1">Manage your preferences and data.</p>
       </div>
-
       <Tabs defaultValue="gmail" className="w-full">
-        <TabsList className="grid w-full max-w-lg grid-cols-3">
-          <TabsTrigger value="gmail"><Mail className="w-4 h-4 mr-2" /> Gmail</TabsTrigger>
-          <TabsTrigger value="categories"><Tags className="w-4 h-4 mr-2" /> Categories</TabsTrigger>
-          <TabsTrigger value="notifications"><Bell className="w-4 h-4 mr-2" /> Reminders</TabsTrigger>
+        <TabsList className="grid w-full max-w-2xl grid-cols-4">
+          <TabsTrigger value="gmail"><Mail className="w-4 h-4 mr-1.5 hidden sm:inline" /> Gmail</TabsTrigger>
+          <TabsTrigger value="pwa"><Smartphone className="w-4 h-4 mr-1.5 hidden sm:inline" /> Install</TabsTrigger>
+          <TabsTrigger value="categories"><Tags className="w-4 h-4 mr-1.5 hidden sm:inline" /> Categories</TabsTrigger>
+          <TabsTrigger value="notifications"><Bell className="w-4 h-4 mr-1.5 hidden sm:inline" /> Alerts</TabsTrigger>
         </TabsList>
-        
         <TabsContent value="gmail" className="mt-6 space-y-4">
-          <GmailSettings />
-          <AccountSettings />
+          <GmailSection />
+          <BackupSection />
         </TabsContent>
-        
-        <TabsContent value="categories" className="mt-6">
-          <CategoriesSettings />
+        <TabsContent value="pwa" className="mt-6 space-y-4">
+          <PWASection />
+          <AccountSection />
         </TabsContent>
-        
-        <TabsContent value="notifications" className="mt-6">
-          <NotificationsSettings />
-        </TabsContent>
+        <TabsContent value="categories" className="mt-6"><CategoriesSection /></TabsContent>
+        <TabsContent value="notifications" className="mt-6"><NotificationsSection /></TabsContent>
       </Tabs>
     </div>
   );
 }
 
-function AccountSettings() {
-  const { user, logout } = useAuth();
+function AccountSection() {
+  const { user, isAuthenticated, login, logout } = useGoogleAuth();
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2"><User className="w-5 h-5 text-green-500" /> Account</CardTitle>
-        <CardDescription>Your Replit login details.</CardDescription>
+        <CardTitle className="flex items-center gap-2"><User className="w-5 h-5 text-green-500" /> Google Account</CardTitle>
+        <CardDescription>Sign in with Google to enable Gmail auto-import.</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex items-center gap-4">
-          {user?.profileImageUrl && (
-            <img src={user.profileImageUrl} alt="Profile" className="w-12 h-12 rounded-full border-2 border-green-200" />
-          )}
-          <div>
-            <p className="font-semibold">{[user?.firstName, user?.lastName].filter(Boolean).join(" ") || "User"}</p>
-            <p className="text-sm text-muted-foreground">{user?.email ?? "No email on file"}</p>
+      <CardContent>
+        {isAuthenticated && user ? (
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              {user.picture && <img src={user.picture} alt="Profile" className="w-10 h-10 rounded-full border border-green-200" />}
+              <div>
+                <p className="font-medium">{user.name}</p>
+                <p className="text-sm text-muted-foreground">{user.email}</p>
+              </div>
+            </div>
+            <Button variant="outline" size="sm" onClick={logout} className="text-red-500 border-red-200">
+              <LogOut className="w-4 h-4 mr-2" /> Sign out
+            </Button>
           </div>
-        </div>
-        <Button variant="outline" size="sm" onClick={logout} className="text-red-500 hover:text-red-600 border-red-200">
-          <LogOut className="w-4 h-4 mr-2" /> Sign out
-        </Button>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">Not signed in. Sign in with Google to sync Gmail transactions.</p>
+            <Button onClick={login} className="bg-white hover:bg-gray-50 text-gray-700 border shadow-sm">
+              <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+              </svg>
+              Sign in with Google
+            </Button>
+            <p className="text-xs text-muted-foreground">SmartTrack works without sign-in. Google account only needed for Gmail sync.</p>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
 }
 
-function GmailSettings() {
+function GmailSection() {
   const { toast } = useToast();
-  const qc = useQueryClient();
+  const { isAuthenticated, accessToken, login } = useGoogleAuth();
+  const [isSyncing, setIsSyncing] = React.useState(false);
+  const [lastSync, setLastSync] = React.useState<Date | null>(null);
 
-  const { data: status, isLoading } = useQuery({
-    queryKey: ["gmail-status"],
-    queryFn: fetchGmailStatus,
-  });
+  React.useEffect(() => {
+    getGmailStatus().then(s => setLastSync(s.lastSyncAt));
+  }, []);
 
-  const connectMutation = useMutation({
-    mutationFn: async () => {
-      const { url } = await fetchGmailAuthUrl();
-      window.location.href = url;
-    },
-    onError: () => toast({ title: "Could not connect Gmail", description: "Ensure Google OAuth credentials are configured.", variant: "destructive" }),
-  });
-
-  const disconnectMutation = useMutation({
-    mutationFn: disconnectGmail,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["gmail-status"] }); toast({ title: "Gmail disconnected" }); },
-    onError: () => toast({ title: "Failed to disconnect", variant: "destructive" }),
-  });
-
-  const syncMutation = useMutation({
-    mutationFn: syncGmail,
-    onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ["gmail-status"] });
-      qc.invalidateQueries({ queryKey: ["transactions"] });
-      toast({ title: `Sync complete — ${data.imported} new transaction${data.imported !== 1 ? "s" : ""} imported` });
-    },
-    onError: () => toast({ title: "Sync failed", variant: "destructive" }),
-  });
+  const handleSync = async () => {
+    if (!accessToken) { toast({ title: "Please sign in with Google first", variant: "destructive" }); return; }
+    setIsSyncing(true);
+    try {
+      const result = await syncGmail(accessToken);
+      const newStatus = await getGmailStatus();
+      setLastSync(newStatus.lastSyncAt);
+      toast({ title: `Sync complete — ${result.imported} new transaction${result.imported !== 1 ? "s" : ""} imported` });
+    } catch (e) {
+      toast({ title: "Sync failed. Check your Google permissions.", variant: "destructive" });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Mail className="w-5 h-5 text-green-500" /> Gmail Integration
-        </CardTitle>
-        <CardDescription>
-          Connect your Gmail to automatically import bank transaction emails. SmartTrack reads only transaction-related emails and never stores your passwords.
-        </CardDescription>
+        <CardTitle className="flex items-center gap-2"><Mail className="w-5 h-5 text-green-500" /> Gmail Auto-Import</CardTitle>
+        <CardDescription>Automatically import bank transaction alerts from Gmail.</CardDescription>
       </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <div className="animate-pulse h-16 bg-muted/20 rounded-xl" />
-        ) : status?.connected ? (
-          <div className="space-y-4">
-            <div className="flex items-start gap-3 p-4 bg-green-50 border border-green-200 rounded-xl">
-              <CheckCircle2 className="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
-              <div className="flex-1">
-                <p className="font-medium text-green-800">Gmail connected</p>
-                {status.email && <p className="text-sm text-green-700">{status.email}</p>}
-                {status.lastSyncAt && (
-                  <p className="text-xs text-green-600 mt-1">
-                    Last synced: {new Date(status.lastSyncAt).toLocaleString("en-IN")}
-                  </p>
-                )}
+      <CardContent className="space-y-4">
+        {!isAuthenticated ? (
+          <div className="space-y-3">
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex gap-3">
+              <XCircle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium text-amber-800 text-sm">Sign in required</p>
+                <p className="text-amber-700 text-sm">Connect your Google account to sync Gmail transactions automatically.</p>
               </div>
             </div>
-            <div className="flex gap-3">
-              <Button
-                onClick={() => syncMutation.mutate()}
-                disabled={syncMutation.isPending}
-                className="bg-green-500 hover:bg-green-600 text-white"
-              >
-                <RefreshCw className={`w-4 h-4 mr-2 ${syncMutation.isPending ? "animate-spin" : ""}`} />
-                {syncMutation.isPending ? "Syncing…" : "Sync Now"}
-              </Button>
-              <Button variant="outline" onClick={() => disconnectMutation.mutate()} disabled={disconnectMutation.isPending} className="text-red-500 border-red-200 hover:text-red-700">
-                <XCircle className="w-4 h-4 mr-2" /> Disconnect
-              </Button>
-            </div>
+            <Button onClick={login} className="bg-white hover:bg-gray-50 text-gray-700 border shadow-sm w-full">
+              <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+              </svg>
+              Sign in with Google
+            </Button>
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
-              <XCircle className="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" />
+            <div className="p-4 bg-green-50 border border-green-200 rounded-xl flex gap-3">
+              <CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
               <div>
-                <p className="font-medium text-amber-800">Gmail not connected</p>
-                <p className="text-sm text-amber-700">Connect your Gmail to automatically import transactions from bank alert emails (UPI, NEFT, IMPS, debit/credit alerts).</p>
+                <p className="font-medium text-green-800 text-sm">Google account connected</p>
+                {lastSync && <p className="text-green-700 text-xs">Last sync: {lastSync.toLocaleString("en-IN")}</p>}
               </div>
             </div>
-            <div className="space-y-2 text-sm text-muted-foreground bg-muted/30 rounded-xl p-4">
-              <p className="font-medium text-foreground">What SmartTrack reads:</p>
-              <ul className="space-y-1 list-disc list-inside">
-                <li>Bank debit/credit alerts</li>
-                <li>UPI payment confirmations</li>
-                <li>NEFT/IMPS/RTGS transfer notifications</li>
-                <li>Credit card transaction alerts</li>
-              </ul>
-              <p className="text-xs pt-1">SmartTrack <strong>never</strong> reads personal or promotional emails.</p>
+            <div className="text-sm text-muted-foreground bg-muted/30 rounded-xl p-3 space-y-1">
+              <p className="font-medium text-foreground text-xs">What gets imported:</p>
+              <p className="text-xs">UPI alerts · NEFT/IMPS notifications · Debit/credit card alerts · Bank transaction emails</p>
             </div>
-            <Button
-              onClick={() => connectMutation.mutate()}
-              disabled={connectMutation.isPending}
-              className="bg-green-500 hover:bg-green-600 text-white"
-            >
-              <Mail className="w-4 h-4 mr-2" />
-              {connectMutation.isPending ? "Connecting…" : "Connect Gmail"}
+            <Button onClick={handleSync} disabled={isSyncing} className="bg-green-500 hover:bg-green-600 text-white w-full">
+              <RefreshCw className={`w-4 h-4 mr-2 ${isSyncing ? "animate-spin" : ""}`} />
+              {isSyncing ? "Syncing…" : "Sync Gmail Now"}
             </Button>
           </div>
         )}
@@ -207,20 +165,136 @@ function GmailSettings() {
   );
 }
 
-function CategoriesSettings() {
+function BackupSection() {
   const { toast } = useToast();
-  const { data, isLoading } = useListCategories();
-  const deleteCat = useDeleteCategory();
-  
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const [isImporting, setIsImporting] = React.useState(false);
+
+  const handleExport = async () => {
+    try {
+      await exportBackup();
+      toast({ title: "Backup downloaded" });
+    } catch {
+      toast({ title: "Export failed", variant: "destructive" });
+    }
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsImporting(true);
+    try {
+      const result = await importBackup(file);
+      toast({ title: `Restored: ${result.transactions} transactions, ${result.accounts} accounts` });
+    } catch (err: any) {
+      toast({ title: "Import failed", description: err.message, variant: "destructive" });
+    } finally {
+      setIsImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Backup & Restore</CardTitle>
+        <CardDescription>Export all your data as a JSON file or restore from a previous backup.</CardDescription>
+      </CardHeader>
+      <CardContent className="flex gap-3">
+        <Button variant="outline" onClick={handleExport} className="flex-1">
+          <Download className="w-4 h-4 mr-2" /> Export Backup
+        </Button>
+        <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isImporting} className="flex-1">
+          <Upload className="w-4 h-4 mr-2" /> {isImporting ? "Restoring…" : "Restore Backup"}
+        </Button>
+        <input type="file" accept=".json" ref={fileInputRef} onChange={handleImport} className="hidden" />
+      </CardContent>
+    </Card>
+  );
+}
+
+function PWASection() {
+  const { toast } = useToast();
+  const [notifPermission, setNotifPermission] = React.useState(
+    "Notification" in window ? Notification.permission : "not-supported"
+  );
+
+  const handleNotifPermission = async () => {
+    const granted = await requestNotificationPermission();
+    setNotifPermission(Notification.permission);
+    if (granted) {
+      toast({ title: "Notifications enabled!" });
+      new Notification("SmartTrack", { body: "You'll now receive expense reminders.", icon: "/icons/icon-192.png" });
+    } else {
+      toast({ title: "Notifications not allowed. Enable them in your browser/device settings.", variant: "destructive" });
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2"><Smartphone className="w-5 h-5 text-green-500" /> Install as App</CardTitle>
+        <CardDescription>SmartTrack is a PWA — install it on your phone for the best experience.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid sm:grid-cols-2 gap-4">
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+            <p className="font-semibold text-blue-800 text-sm mb-1">📱 iOS (iPhone/iPad)</p>
+            <ol className="text-blue-700 text-xs space-y-1 list-decimal list-inside">
+              <li>Open in Safari</li>
+              <li>Tap the Share button (box with arrow)</li>
+              <li>Select "Add to Home Screen"</li>
+              <li>Tap "Add" to confirm</li>
+            </ol>
+            <p className="text-blue-600 text-xs mt-2 font-medium">Push notifications require iOS 16.4+ and adding to Home Screen</p>
+          </div>
+          <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+            <p className="font-semibold text-green-800 text-sm mb-1">🤖 Android</p>
+            <ol className="text-green-700 text-xs space-y-1 list-decimal list-inside">
+              <li>Open in Chrome</li>
+              <li>Tap the 3-dot menu</li>
+              <li>Select "Add to Home Screen" or "Install App"</li>
+              <li>Confirm installation</li>
+            </ol>
+            <p className="text-green-600 text-xs mt-2 font-medium">Push notifications work on Android after install</p>
+          </div>
+        </div>
+
+        <div className="border rounded-xl p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium text-sm">Push Notifications</p>
+              <p className="text-xs text-muted-foreground">Get expense reminders on your device</p>
+            </div>
+            <Badge variant={notifPermission === "granted" ? "default" : "secondary"}
+              className={notifPermission === "granted" ? "bg-green-500" : ""}>
+              {notifPermission === "granted" ? "Enabled" : notifPermission === "denied" ? "Blocked" : "Not set"}
+            </Badge>
+          </div>
+          {notifPermission !== "granted" && notifPermission !== "not-supported" && (
+            <Button size="sm" onClick={handleNotifPermission} className="bg-green-500 hover:bg-green-600 text-white">
+              <Bell className="w-4 h-4 mr-2" /> Enable Notifications
+            </Button>
+          )}
+          {notifPermission === "denied" && (
+            <p className="text-xs text-muted-foreground">Notifications are blocked. Go to your browser settings to allow them for this site.</p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function CategoriesSection() {
+  const { toast } = useToast();
+  const { data, isLoading } = useCategories();
   const [isDialogOpen, setIsDialogOpen] = React.useState(false);
   const [editingCat, setEditingCat] = React.useState<Category | null>(null);
 
-  const handleDelete = (id: string) => {
-    if (confirm("Delete this category? Transactions using it will lose their category association.")) {
-      deleteCat.mutate({ id }, {
-        onSuccess: () => toast({ title: "Deleted category" })
-      });
-    }
+  const handleDelete = async (id: string) => {
+    if (!confirm("Delete this category?")) return;
+    await deleteCategory(id);
+    toast({ title: "Deleted" });
   };
 
   return (
@@ -231,36 +305,36 @@ function CategoriesSettings() {
           <CardDescription>Manage how you group transactions.</CardDescription>
         </div>
         <Button size="sm" onClick={() => { setEditingCat(null); setIsDialogOpen(true); }}>
-          <Plus className="w-4 h-4 mr-2" /> Add Category
+          <Plus className="w-4 h-4 mr-2" /> Add
         </Button>
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <div className="animate-pulse space-y-4">
-            <div className="h-12 bg-muted/20 rounded-lg"></div>
-            <div className="h-12 bg-muted/20 rounded-lg"></div>
+          <div className="animate-pulse space-y-3">
+            {Array.from({length:4}).map((_,i) => <div key={i} className="h-12 bg-muted/20 rounded-lg" />)}
           </div>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {data?.categories.map((cat) => (
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {data?.categories.map(cat => (
               <div key={cat.id} className="flex items-center justify-between p-3 border rounded-xl hover:bg-muted/30 transition-colors group">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg" style={{ backgroundColor: `${cat.color}20`, color: cat.color }}>
-                    {cat.icon}
-                  </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-9 h-9 rounded-full flex items-center justify-center text-lg"
+                    style={{ backgroundColor: `${cat.color}20`, color: cat.color }}>{cat.icon}</div>
                   <div>
-                    <p className="font-medium">{cat.name}</p>
+                    <p className="font-medium text-sm">{cat.name}</p>
                     <Badge variant="outline" className="text-[10px] mt-0.5 capitalize">{cat.type}</Badge>
                   </div>
                 </div>
-                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => { setEditingCat(cat); setIsDialogOpen(true); }}>
-                    <Edit2 className="w-4 h-4 text-muted-foreground hover:text-foreground" />
-                  </Button>
-                  <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => handleDelete(cat.id)}>
-                    <Trash2 className="w-4 h-4 text-muted-foreground hover:text-destructive" />
-                  </Button>
-                </div>
+                {!cat.isDefault && (
+                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => { setEditingCat(cat); setIsDialogOpen(true); }}>
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </Button>
+                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => handleDelete(cat.id)}>
+                      <Trash2 className="w-3.5 h-3.5 text-destructive" />
+                    </Button>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -271,68 +345,59 @@ function CategoriesSettings() {
   );
 }
 
-function CategoryDialog({ open, onOpenChange, categoryToEdit }: { open: boolean, onOpenChange: (open: boolean) => void, categoryToEdit: Category | null }) {
+function CategoryDialog({ open, onOpenChange, categoryToEdit }: { open: boolean; onOpenChange: (v: boolean) => void; categoryToEdit: Category | null }) {
   const { toast } = useToast();
-  const createCat = useCreateCategory();
-  const updateCat = useUpdateCategory();
-
   const [name, setName] = React.useState("");
   const [icon, setIcon] = React.useState("📝");
   const [color, setColor] = React.useState("#10b981");
-  const [type, setType] = React.useState<CreateCategoryInputType>("expense");
+  const [type, setType] = React.useState<Category["type"]>("expense");
+  const [isSaving, setIsSaving] = React.useState(false);
 
   React.useEffect(() => {
     if (open) {
-      if (categoryToEdit) {
-        setName(categoryToEdit.name);
-        setIcon(categoryToEdit.icon);
-        setColor(categoryToEdit.color);
-        setType(categoryToEdit.type as CreateCategoryInputType);
-      } else {
-        setName("");
-        setIcon("📝");
-        setColor("#10b981");
-        setType("expense");
-      }
+      setName(categoryToEdit?.name ?? "");
+      setIcon(categoryToEdit?.icon ?? "📝");
+      setColor(categoryToEdit?.color ?? "#10b981");
+      setType(categoryToEdit?.type ?? "expense");
     }
   }, [open, categoryToEdit]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const payload = { name, icon, color, type };
-    if (categoryToEdit) {
-      updateCat.mutate({ id: categoryToEdit.id, data: payload }, {
-        onSuccess: () => { toast({ title: "Updated" }); onOpenChange(false); }
-      });
-    } else {
-      createCat.mutate({ data: payload }, {
-        onSuccess: () => { toast({ title: "Created" }); onOpenChange(false); }
-      });
+    setIsSaving(true);
+    try {
+      if (categoryToEdit) {
+        await updateCategory(categoryToEdit.id, { name, icon, color, type });
+        toast({ title: "Updated" });
+      } else {
+        await createCategory({ name, icon, color, type });
+        toast({ title: "Created" });
+      }
+      onOpenChange(false);
+    } finally {
+      setIsSaving(false);
     }
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{categoryToEdit ? "Edit Category" : "New Category"}</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4 pt-4">
-          <div className="grid grid-cols-4 gap-4">
+        <DialogHeader><DialogTitle>{categoryToEdit ? "Edit Category" : "New Category"}</DialogTitle></DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4 pt-2">
+          <div className="grid grid-cols-4 gap-3">
             <div className="col-span-3 space-y-2">
               <Label>Name</Label>
-              <Input required value={name} onChange={(e) => setName(e.target.value)} />
+              <Input required value={name} onChange={e => setName(e.target.value)} />
             </div>
             <div className="col-span-1 space-y-2">
-              <Label>Emoji Icon</Label>
-              <Input required value={icon} onChange={(e) => setIcon(e.target.value)} className="text-center text-lg" maxLength={2} />
+              <Label>Icon</Label>
+              <Input required value={icon} onChange={e => setIcon(e.target.value)} className="text-center text-lg" maxLength={2} />
             </div>
           </div>
-          
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label>Type</Label>
-              <Select value={type} onValueChange={(v) => setType(v as CreateCategoryInputType)}>
+              <Select value={type} onValueChange={v => setType(v as Category["type"])}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="expense">Expense</SelectItem>
@@ -342,17 +407,16 @@ function CategoryDialog({ open, onOpenChange, categoryToEdit }: { open: boolean,
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Theme Color</Label>
-              <div className="flex gap-2 items-center h-10 border rounded-md px-3">
-                <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="w-6 h-6 rounded border-0 cursor-pointer" />
+              <Label>Color</Label>
+              <div className="flex items-center gap-2 h-10 border rounded-md px-3">
+                <input type="color" value={color} onChange={e => setColor(e.target.value)} className="w-6 h-6 rounded cursor-pointer border-0" />
                 <span className="font-mono text-sm">{color}</span>
               </div>
             </div>
           </div>
-
-          <div className="pt-4 flex justify-end gap-2">
+          <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" disabled={createCat.isPending || updateCat.isPending}>Save</Button>
+            <Button type="submit" disabled={isSaving}>Save</Button>
           </div>
         </form>
       </DialogContent>
@@ -360,72 +424,42 @@ function CategoryDialog({ open, onOpenChange, categoryToEdit }: { open: boolean,
   );
 }
 
-function NotificationsSettings() {
+function NotificationsSection() {
   const { toast } = useToast();
-  const { data, isLoading } = useListNotifications();
-  const deleteNotif = useDeleteNotification();
-
+  const { data, isLoading } = useNotificationSettings();
   const [isDialogOpen, setIsDialogOpen] = React.useState(false);
-
-  const testNotification = (title: string, message: string) => {
-    if (!("Notification" in window)) {
-      toast({ title: "Browser does not support notifications", variant: "destructive" });
-      return;
-    }
-    Notification.requestPermission().then((permission) => {
-      if (permission === "granted") {
-        new Notification(title, { body: message, icon: '/favicon.svg' });
-      } else {
-        toast({ title: "Notification permission denied", variant: "destructive" });
-      }
-    });
-  };
 
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <div>
           <CardTitle>Reminders</CardTitle>
-          <CardDescription>Setup alerts for bills and reviews.</CardDescription>
+          <CardDescription>Schedule expense reminders. Enable notifications in the Install tab first.</CardDescription>
         </div>
         <Button size="sm" onClick={() => setIsDialogOpen(true)}>
-          <Plus className="w-4 h-4 mr-2" /> Add Reminder
+          <Plus className="w-4 h-4 mr-2" /> Add
         </Button>
       </CardHeader>
       <CardContent>
-        {isLoading ? (
-          <div className="animate-pulse space-y-4">
-            <div className="h-16 bg-muted/20 rounded-lg"></div>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {data?.notifications.length === 0 ? (
-              <p className="text-muted-foreground text-sm text-center py-6">No reminders configured.</p>
-            ) : (
-              data?.notifications.map((notif) => (
-                <div key={notif.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border rounded-xl bg-card">
-                  <div className="mb-3 sm:mb-0">
-                    <h4 className="font-bold flex items-center gap-2">
-                      {notif.title}
-                      {!notif.isActive && <Badge variant="secondary">Disabled</Badge>}
-                    </h4>
-                    <p className="text-sm text-muted-foreground">{notif.message}</p>
-                    <div className="flex gap-2 mt-2">
-                      <Badge variant="outline" className="capitalize">{notif.frequency}</Badge>
-                      <Badge variant="outline">{notif.time}</Badge>
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button variant="secondary" size="sm" onClick={() => testNotification(notif.title, notif.message)}>
-                      Test
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={() => deleteNotif.mutate({ id: notif.id })}>
-                      <Trash2 className="w-4 h-4 text-destructive" />
-                    </Button>
+        {isLoading ? <div className="animate-pulse h-16 bg-muted/20 rounded-lg" /> : (
+          <div className="space-y-3">
+            {!data?.notifications.length ? (
+              <p className="text-muted-foreground text-sm text-center py-6">No reminders yet.</p>
+            ) : data?.notifications.map(notif => (
+              <div key={notif.id} className="flex items-center justify-between p-4 border rounded-xl">
+                <div>
+                  <p className="font-medium text-sm">{notif.title}</p>
+                  <p className="text-xs text-muted-foreground">{notif.message}</p>
+                  <div className="flex gap-2 mt-1">
+                    <Badge variant="outline" className="text-xs capitalize">{notif.frequency}</Badge>
+                    <Badge variant="outline" className="text-xs">{notif.time}</Badge>
                   </div>
                 </div>
-              ))
-            )}
+                <Button size="icon" variant="ghost" onClick={() => deleteNotification(notif.id).then(() => toast({ title: "Deleted" }))}>
+                  <Trash2 className="w-4 h-4 text-destructive" />
+                </Button>
+              </div>
+            ))}
           </div>
         )}
       </CardContent>
@@ -434,47 +468,37 @@ function NotificationsSettings() {
   );
 }
 
-function NotificationDialog({ open, onOpenChange }: { open: boolean, onOpenChange: (open: boolean) => void }) {
+function NotificationDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const { toast } = useToast();
-  const createNotif = useCreateNotification();
-
   const [title, setTitle] = React.useState("");
   const [message, setMessage] = React.useState("");
-  const [type, setType] = React.useState<CreateNotificationInputType>("daily_review");
-  const [frequency, setFrequency] = React.useState<CreateNotificationInputFrequency>("daily");
+  const [frequency, setFrequency] = React.useState<NotificationSetting["frequency"]>("daily");
   const [time, setTime] = React.useState("09:00");
+  const [isSaving, setIsSaving] = React.useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    createNotif.mutate({
-      data: { title, message, type, frequency, time, isActive: true }
-    }, {
-      onSuccess: () => {
-        toast({ title: "Reminder created" });
-        onOpenChange(false);
-      }
-    });
+    setIsSaving(true);
+    try {
+      await createNotification({ title, message, type: "daily_review", frequency, time, isActive: true });
+      toast({ title: "Reminder created" });
+      onOpenChange(false);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogHeader>
-          <DialogTitle>New Reminder</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4 pt-4">
-          <div className="space-y-2">
-            <Label>Title</Label>
-            <Input required value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Daily Review" />
-          </div>
-          <div className="space-y-2">
-            <Label>Message</Label>
-            <Input required value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Time to log today's expenses!" />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
+        <DialogHeader><DialogTitle>New Reminder</DialogTitle></DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4 pt-2">
+          <div className="space-y-2"><Label>Title</Label><Input required value={title} onChange={e => setTitle(e.target.value)} placeholder="Daily Review" /></div>
+          <div className="space-y-2"><Label>Message</Label><Input required value={message} onChange={e => setMessage(e.target.value)} placeholder="Log today's expenses" /></div>
+          <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label>Frequency</Label>
-              <Select value={frequency} onValueChange={(v) => setFrequency(v as CreateNotificationInputFrequency)}>
+              <Select value={frequency} onValueChange={v => setFrequency(v as NotificationSetting["frequency"])}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="daily">Daily</SelectItem>
@@ -483,14 +507,11 @@ function NotificationDialog({ open, onOpenChange }: { open: boolean, onOpenChang
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
-              <Label>Time</Label>
-              <Input type="time" required value={time} onChange={(e) => setTime(e.target.value)} />
-            </div>
+            <div className="space-y-2"><Label>Time</Label><Input type="time" required value={time} onChange={e => setTime(e.target.value)} /></div>
           </div>
-          <div className="pt-4 flex justify-end gap-2">
+          <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" disabled={createNotif.isPending}>Save</Button>
+            <Button type="submit" disabled={isSaving}>Save</Button>
           </div>
         </form>
       </DialogContent>
