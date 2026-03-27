@@ -16,6 +16,12 @@ interface GmailPart {
   parts?: GmailPart[];
 }
 
+// Only process emails from known Indian bank / payment senders
+const TRUSTED_SENDER_RE = /hdfc|sbi|icici|axis|kotak|idbi|indusind|yesbank|canarabank|unionbank|bankofbaroda|pnb|boi\.|paytm|phonepe|gpay|googlepay|amazonpay|mobikwik|freecharge|cred\.|alerts@|notify@|noreply@.*bank|transaction@|netbanking|upi@|upi-|npci/i;
+
+// Skip subjects that are clearly NOT transaction notifications
+const SKIP_SUBJECT_RE = /\botp\b|one.time.pass|statement|e-statement|password|reset|offer|promo|cashback offer|congratul|welcome|feedback|survey|reward points|newsletter|marketing/i;
+
 async function gmailFetch(path: string, token: string) {
   const res = await fetch(`https://gmail.googleapis.com/gmail/v1/${path}`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -33,86 +39,98 @@ function extractText(part: GmailMessageFull["payload"]): string {
   return "";
 }
 
-function parseEmailForTransaction(body: string, subject: string, from: string): Omit<Transaction, "id" | "createdAt" | "updatedAt" | "gmailMessageId"> | null {
-  const text = `${subject} ${body}`;
+function parseEmailForTransaction(
+  body: string,
+  subject: string,
+  from: string,
+  emailDate: string
+): Omit<Transaction, "id" | "createdAt" | "updatedAt" | "gmailMessageId"> | null {
+  // Skip if from an untrusted sender
+  if (!TRUSTED_SENDER_RE.test(from)) return null;
 
-  const isDebit = /debited|payment|spent|charged|purchase|withdrew|deducted/i.test(text);
-  const isCredit = /credited|received|refund|cashback|salary|payment received/i.test(text);
+  // Skip known non-transaction subjects
+  if (SKIP_SUBJECT_RE.test(subject)) return null;
+
+  const text = `${subject}\n${body}`;
+
+  // Must have a clear debit or credit signal
+  const isDebit = /\b(debited|debit|paid|payment made|withdrawn|spent|charged|purchase|sent|transferred to)\b/i.test(text);
+  const isCredit = /\b(credited|credit|received|refund|cashback|salary|deposited|transfer received|payment received)\b/i.test(text);
   if (!isDebit && !isCredit) return null;
 
+  // Must have a rupee amount — be strict about format
   const amountMatch =
     text.match(/(?:Rs\.?|INR|₹)\s*([0-9,]+(?:\.[0-9]{1,2})?)/i) ||
-    text.match(/([0-9,]+(?:\.[0-9]{2}))\s*(?:Rs|INR|₹)/i);
+    text.match(/([0-9,]+(?:\.[0-9]{2}))\s*(?:Rs\.?|INR|₹)/i);
   if (!amountMatch) return null;
 
   const amount = parseFloat(amountMatch[1].replace(/,/g, ""));
-  if (isNaN(amount) || amount <= 0) return null;
+  if (isNaN(amount) || amount <= 0 || amount > 10_000_000) return null;
 
   const type: "income" | "expense" = isCredit && !isDebit ? "income" : "expense";
 
+  // Extract merchant/payee
   let merchantName: string | null = null;
   const merchantPatterns = [
-    /(?:at|to|from)\s+([A-Z][A-Za-z0-9\s&'.-]{2,40}?)(?:\s+on|\s+via|\s+UPI|\s*\.|\s*$)/i,
-    /(?:merchant|payee|beneficiary)[:\s]+([A-Za-z0-9\s&'.-]+?)(?:\s*\n|\.|$)/i,
+    /(?:at|to|towards)\s+([A-Z][A-Za-z0-9\s&'.\-]{2,50}?)(?:\s+on\b|\s+via\b|\s+UPI\b|\s*[.\n]|$)/i,
+    /(?:merchant|payee|beneficiary|VPA)[:\s]+([A-Za-z0-9\s&'.\-@]+?)(?:\s*[\n.]|$)/i,
+    /(?:paid to|payment to)\s+([A-Za-z0-9\s&'.\-]{2,50}?)(?:\s+on\b|\s*[\n.]|$)/i,
   ];
   for (const p of merchantPatterns) {
     const m = text.match(p);
-    if (m?.[1]?.trim()) { merchantName = m[1].trim().slice(0, 60); break; }
+    if (m?.[1]?.trim().length > 1) {
+      merchantName = m[1].trim().replace(/\s+/g, " ").slice(0, 60);
+      break;
+    }
   }
 
-  // Extract date from email body
-  let date = new Date().toISOString();
+  // Extract date from email itself (prefer email header date over body)
+  let date = emailDate || new Date().toISOString();
   const datePatterns = [
-    /(\d{2})[\/\-](\d{2})[\/\-](\d{4})/,  // DD/MM/YYYY or DD-MM-YYYY
-    /(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{4})/i,
-    /(\d{4})[\/\-](\d{2})[\/\-](\d{2})/,  // YYYY-MM-DD
+    /(\d{2})[\/\-](\d{2})[\/\-](\d{4})/,
+    /(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s*[,.]?\s*(\d{4})/i,
+    /(\d{4})[\/\-](\d{2})[\/\-](\d{2})/,
   ];
   for (const p of datePatterns) {
-    const m = text.match(p);
+    const m = body.match(p) || subject.match(p);
     if (m) {
       try {
         const parsed = new Date(m[0]);
-        if (!isNaN(parsed.getTime()) && parsed.getFullYear() > 2000) {
+        if (!isNaN(parsed.getTime()) && parsed.getFullYear() >= 2020 && parsed <= new Date()) {
           date = parsed.toISOString();
           break;
         }
-      } catch { /* keep now */ }
+      } catch { /* keep email header date */ }
     }
   }
 
-  const categoryMap: Record<string, string> = {
-    "cat-food": /swiggy|zomato|food|restaurant|cafe|domino|pizza|kfc|mcdonald/i.source,
-    "cat-transport": /uber|ola|rapido|taxi|auto|metro|irctc|flight|petrol|fastag/i.source,
-    "cat-shopping": /amazon|flipkart|myntra|shopping|mart|store/i.source,
-    "cat-entertainment": /netflix|spotify|prime|hotstar|youtube/i.source,
-    "cat-health": /hospital|clinic|pharma|medicine|doctor|health|apollo/i.source,
-    "cat-bills": /electricity|water|gas|broadband|airtel|jio|vi|bsnl|recharge/i.source,
-    "cat-groceries": /blinkit|zepto|bigbasket|grofer|grocery|supermarket/i.source,
-    "cat-salary": /salary|payroll/i.source,
+  // Auto-categorise based on merchant / text
+  const categoryMap: Record<string, RegExp> = {
+    "cat-food": /swiggy|zomato|dominos|pizza|kfc|mcdonald|burger|restaurant|cafe|foodpanda|dunzo|blinkit.*food/i,
+    "cat-transport": /uber|ola|rapido|taxi|cab|auto|metro|irctc|makemytrip|goibibo|flight|petrol|fuel|fastag|parking|toll/i,
+    "cat-shopping": /amazon|flipkart|myntra|meesho|nykaa|ajio|snapdeal|shopping|mart|store|reliance|dmart/i,
+    "cat-entertainment": /netflix|spotify|prime.*video|hotstar|youtube.*premium|disney|bookmyshow|inox|pvr/i,
+    "cat-health": /hospital|clinic|pharma|medicine|doctor|health|apollo|medplus|1mg|netmeds/i,
+    "cat-bills": /electricity|water.*bill|gas.*bill|broadband|wifi|airtel|jio|vi |bsnl|recharge|postpaid|bill.*pay/i,
+    "cat-groceries": /blinkit|zepto|bigbasket|grofers|grocery|supermarket|fresh.*market/i,
+    "cat-salary": /salary|payroll|wages|stipend/i,
   };
-
   let categoryId: string | null = null;
-  const lowerText = (merchantName || subject).toLowerCase();
-  for (const [catId, pattern] of Object.entries(categoryMap)) {
-    if (new RegExp(pattern, "i").test(lowerText)) {
-      const existing = db.categories.get(catId);
-      if (existing) { categoryId = catId; break; }
-    }
+  const haystack = `${merchantName ?? ""} ${subject}`;
+  for (const [catId, re] of Object.entries(categoryMap)) {
+    if (re.test(haystack)) { categoryId = catId; break; }
   }
 
   const description = merchantName
     ? `${type === "expense" ? "Payment to" : "Receipt from"} ${merchantName}`
     : subject.slice(0, 100) || "Bank transaction";
 
-  return { amount, type, description, merchantName, date, categoryId, accountId: null, importSource: "email", notes: null };
+  return { amount, type, description, merchantName: merchantName ?? null, date, categoryId, accountId: null, importSource: "email", notes: null };
 }
 
 export interface GmailSyncOptions {
-  /** Sync emails from this date (defaults to last sync time or 30 days ago) */
   fromDate?: Date;
-  /** Sync emails up to this date (defaults to now) */
   toDate?: Date;
-  /** Max number of emails to process */
   maxResults?: number;
 }
 
@@ -120,9 +138,8 @@ export async function syncGmail(
   accessToken: string,
   options: GmailSyncOptions = {}
 ): Promise<{ imported: number; skipped: number; errors: number }> {
-  const { fromDate, toDate, maxResults = 100 } = options;
+  const { fromDate, toDate, maxResults = 150 } = options;
 
-  // Determine the "after" timestamp for the Gmail query
   let afterTimestamp: number;
   if (fromDate) {
     afterTimestamp = Math.floor(fromDate.getTime() / 1000);
@@ -134,12 +151,11 @@ export async function syncGmail(
     afterTimestamp = Math.floor(lastSync / 1000);
   }
 
-  // Build Gmail search query
-  let query = `after:${afterTimestamp} (transaction OR debited OR credited OR "bank alert" OR payment OR UPI OR NEFT OR IMPS OR "Rs.") -category:promotions -category:social`;
+  // Tight query — only transaction-like emails
+  let query = `after:${afterTimestamp} (debited OR credited OR "UPI payment" OR "NEFT" OR "IMPS" OR "transaction alert" OR "bank alert") -category:promotions -category:social -category:updates -subject:OTP -subject:statement -subject:offer`;
 
   if (toDate) {
-    const beforeTimestamp = Math.floor(toDate.getTime() / 1000);
-    query += ` before:${beforeTimestamp}`;
+    query += ` before:${Math.floor(toDate.getTime() / 1000)}`;
   }
 
   let imported = 0, skipped = 0, errors = 0;
@@ -154,6 +170,7 @@ export async function syncGmail(
 
     for (const msg of messages) {
       try {
+        // Check duplicate by gmailMessageId
         const existing = await db.transactions.where("gmailMessageId").equals(msg.id).count();
         if (existing > 0) { skipped++; continue; }
 
@@ -161,10 +178,27 @@ export async function syncGmail(
         const headers = full.payload?.headers ?? [];
         const subject = headers.find(h => h.name === "Subject")?.value ?? "";
         const from = headers.find(h => h.name === "From")?.value ?? "";
-        const body = extractText(full.payload) || subject;
+        const dateHeader = headers.find(h => h.name === "Date")?.value ?? "";
 
-        const parsed = parseEmailForTransaction(body, subject, from);
+        let emailDate = new Date().toISOString();
+        try {
+          const parsed = new Date(dateHeader);
+          if (!isNaN(parsed.getTime())) emailDate = parsed.toISOString();
+        } catch { /* ignore */ }
+
+        const body = extractText(full.payload) || subject;
+        const parsed = parseEmailForTransaction(body, subject, from, emailDate);
         if (!parsed) { skipped++; continue; }
+
+        // Extra duplicate check: same amount + same date (day) + same type
+        const txDate = parsed.date.split("T")[0];
+        const dayStart = `${txDate}T00:00:00.000Z`;
+        const dayEnd = `${txDate}T23:59:59.999Z`;
+        const sameDayTxs = await db.transactions
+          .where("date").between(dayStart, dayEnd, true, true)
+          .filter(t => t.amount === parsed.amount && t.type === parsed.type && t.importSource === "email")
+          .count();
+        if (sameDayTxs > 0) { skipped++; continue; }
 
         const now = new Date().toISOString();
         await db.transactions.add({
@@ -181,7 +215,6 @@ export async function syncGmail(
       }
     }
 
-    // Update last sync time (always mark as now)
     await db.settings.put({ id: "gmail_last_sync", key: "gmail_last_sync", value: String(Date.now()) });
   } catch (e) {
     console.error("Gmail sync error", e);
@@ -193,7 +226,5 @@ export async function syncGmail(
 
 export async function getGmailStatus(): Promise<{ lastSyncAt: Date | null }> {
   const lastSync = await db.settings.get("gmail_last_sync");
-  return {
-    lastSyncAt: lastSync ? new Date(parseInt(lastSync.value)) : null,
-  };
+  return { lastSyncAt: lastSync ? new Date(parseInt(lastSync.value)) : null };
 }

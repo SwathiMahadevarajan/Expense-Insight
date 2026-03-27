@@ -14,7 +14,6 @@ export interface TransactionFilter {
 export function useTransactions(filter: TransactionFilter = {}) {
   const data = useLiveQuery(async () => {
     let query = db.transactions.orderBy("date").reverse();
-
     const all = await query.toArray();
     let filtered = all;
 
@@ -33,7 +32,6 @@ export function useTransactions(filter: TransactionFilter = {}) {
     const limit = filter.limit ?? 100;
     const transactions = filtered.slice(offset, offset + limit);
 
-    // Enrich with category/account names
     const categories = await db.categories.toArray();
     const accounts = await db.accounts.toArray();
     const catMap = Object.fromEntries(categories.map(c => [c.id, c]));
@@ -67,4 +65,17 @@ export async function updateTransaction(id: string, input: Partial<Omit<Transact
 
 export async function deleteTransaction(id: string) {
   await db.transactions.delete(id);
+}
+
+export async function bulkDeleteTransactions(ids: string[]) {
+  await db.transactions.bulkDelete(ids);
+}
+
+export async function bulkUpdateTransactions(ids: string[], patch: Partial<Omit<Transaction, "id" | "createdAt">>) {
+  const now = new Date().toISOString();
+  await db.transaction("rw", db.transactions, async () => {
+    for (const id of ids) {
+      await db.transactions.update(id, { ...patch, updatedAt: now });
+    }
+  });
 }
