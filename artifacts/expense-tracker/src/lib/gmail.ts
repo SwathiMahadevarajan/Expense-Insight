@@ -60,16 +60,26 @@ function parseEmailForTransaction(body: string, subject: string, from: string): 
     if (m?.[1]?.trim()) { merchantName = m[1].trim().slice(0, 60); break; }
   }
 
+  // Extract date from email body
   let date = new Date().toISOString();
-  const dateMatch = text.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
-  if (dateMatch) {
-    try {
-      const parsed = new Date(dateMatch[0]);
-      if (!isNaN(parsed.getTime())) date = parsed.toISOString();
-    } catch { /* keep now */ }
+  const datePatterns = [
+    /(\d{2})[\/\-](\d{2})[\/\-](\d{4})/,  // DD/MM/YYYY or DD-MM-YYYY
+    /(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{4})/i,
+    /(\d{4})[\/\-](\d{2})[\/\-](\d{2})/,  // YYYY-MM-DD
+  ];
+  for (const p of datePatterns) {
+    const m = text.match(p);
+    if (m) {
+      try {
+        const parsed = new Date(m[0]);
+        if (!isNaN(parsed.getTime()) && parsed.getFullYear() > 2000) {
+          date = parsed.toISOString();
+          break;
+        }
+      } catch { /* keep now */ }
+    }
   }
 
-  // Suggest category
   const categoryMap: Record<string, string> = {
     "cat-food": /swiggy|zomato|food|restaurant|cafe|domino|pizza|kfc|mcdonald/i.source,
     "cat-transport": /uber|ola|rapido|taxi|auto|metro|irctc|flight|petrol|fastag/i.source,
@@ -97,19 +107,46 @@ function parseEmailForTransaction(body: string, subject: string, from: string): 
   return { amount, type, description, merchantName, date, categoryId, accountId: null, importSource: "email", notes: null };
 }
 
-export async function syncGmail(accessToken: string): Promise<{ imported: number; skipped: number; errors: number }> {
-  // Get last sync time
-  const lastSyncSetting = await db.settings.get("gmail_last_sync");
-  const lastSync = lastSyncSetting ? parseInt(lastSyncSetting.value) : Date.now() - 30 * 24 * 60 * 60 * 1000;
-  const afterDate = Math.floor(lastSync / 1000);
+export interface GmailSyncOptions {
+  /** Sync emails from this date (defaults to last sync time or 30 days ago) */
+  fromDate?: Date;
+  /** Sync emails up to this date (defaults to now) */
+  toDate?: Date;
+  /** Max number of emails to process */
+  maxResults?: number;
+}
 
-  const query = `after:${afterDate} (transaction OR debited OR credited OR "bank alert" OR payment OR UPI OR NEFT OR IMPS OR "Rs.") -category:promotions -category:social`;
+export async function syncGmail(
+  accessToken: string,
+  options: GmailSyncOptions = {}
+): Promise<{ imported: number; skipped: number; errors: number }> {
+  const { fromDate, toDate, maxResults = 100 } = options;
+
+  // Determine the "after" timestamp for the Gmail query
+  let afterTimestamp: number;
+  if (fromDate) {
+    afterTimestamp = Math.floor(fromDate.getTime() / 1000);
+  } else {
+    const lastSyncSetting = await db.settings.get("gmail_last_sync");
+    const lastSync = lastSyncSetting
+      ? parseInt(lastSyncSetting.value)
+      : Date.now() - 30 * 24 * 60 * 60 * 1000;
+    afterTimestamp = Math.floor(lastSync / 1000);
+  }
+
+  // Build Gmail search query
+  let query = `after:${afterTimestamp} (transaction OR debited OR credited OR "bank alert" OR payment OR UPI OR NEFT OR IMPS OR "Rs.") -category:promotions -category:social`;
+
+  if (toDate) {
+    const beforeTimestamp = Math.floor(toDate.getTime() / 1000);
+    query += ` before:${beforeTimestamp}`;
+  }
 
   let imported = 0, skipped = 0, errors = 0;
 
   try {
     const listData = await gmailFetch(
-      `users/me/messages?q=${encodeURIComponent(query)}&maxResults=50`,
+      `users/me/messages?q=${encodeURIComponent(query)}&maxResults=${maxResults}`,
       accessToken
     ) as { messages?: GmailMessage[] };
 
@@ -117,7 +154,6 @@ export async function syncGmail(accessToken: string): Promise<{ imported: number
 
     for (const msg of messages) {
       try {
-        // Check if already imported
         const existing = await db.transactions.where("gmailMessageId").equals(msg.id).count();
         if (existing > 0) { skipped++; continue; }
 
@@ -145,7 +181,7 @@ export async function syncGmail(accessToken: string): Promise<{ imported: number
       }
     }
 
-    // Update last sync time
+    // Update last sync time (always mark as now)
     await db.settings.put({ id: "gmail_last_sync", key: "gmail_last_sync", value: String(Date.now()) });
   } catch (e) {
     console.error("Gmail sync error", e);

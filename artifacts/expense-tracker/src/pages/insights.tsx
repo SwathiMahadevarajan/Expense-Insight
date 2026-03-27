@@ -5,10 +5,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { formatCurrency } from "@/lib/utils";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
-import { TrendingDown, TrendingUp, Wallet, BarChart2 } from "lucide-react";
+import { TrendingDown, TrendingUp, Wallet, BarChart2, Table2, PieChart as PieIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 export default function Insights() {
   const [period, setPeriod] = React.useState<InsightPeriod>("month");
+  const [catView, setCatView] = React.useState<"chart" | "table">("chart");
   const { data: summary, isLoading: isLoadingSummary } = useInsightsSummary(period);
   const { data: byCategory, isLoading: isCatLoading } = useSpendingByCategory(period);
   const { data: daily, isLoading: isDailyLoading } = useDailySpending(period);
@@ -75,66 +78,145 @@ export default function Insights() {
         ) : null}
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        {/* Spending by category pie */}
-        <Card>
-          <CardHeader><CardTitle>Spending by Category</CardTitle></CardHeader>
-          <CardContent>
-            {isCatLoading ? <Skeleton className="h-64 rounded-xl" /> : !byCategory?.data.length ? (
-              <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">No expense data for {periodLabel}</div>
-            ) : (
-              <div>
-                <ResponsiveContainer width="100%" height={220}>
-                  <PieChart>
-                    <Pie data={byCategory.data} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="amount">
-                      {byCategory.data.map((entry, i) => (
-                        <Cell key={i} fill={entry.categoryColor} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(v: number) => formatCurrency(v)} />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="space-y-2 mt-2 max-h-40 overflow-y-auto pr-1">
-                  {byCategory.data.slice(0, 8).map((cat, i) => (
-                    <div key={i} className="flex items-center justify-between text-sm">
-                      <div className="flex items-center gap-2">
-                        <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: cat.categoryColor }} />
-                        <span className="truncate max-w-[120px]">{cat.categoryIcon} {cat.categoryName}</span>
+      {/* Spending by Category — with chart/table toggle */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between pb-3">
+          <CardTitle>Spending by Category</CardTitle>
+          <div className="flex rounded-lg border overflow-hidden">
+            <Button
+              size="sm" variant="ghost"
+              className={`rounded-none h-8 px-3 ${catView === "chart" ? "bg-muted" : ""}`}
+              onClick={() => setCatView("chart")}
+            >
+              <PieIcon className="w-3.5 h-3.5 mr-1.5" /> Chart
+            </Button>
+            <Button
+              size="sm" variant="ghost"
+              className={`rounded-none h-8 px-3 border-l ${catView === "table" ? "bg-muted" : ""}`}
+              onClick={() => setCatView("table")}
+            >
+              <Table2 className="w-3.5 h-3.5 mr-1.5" /> Table
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {isCatLoading ? <Skeleton className="h-64 rounded-xl" /> : !byCategory?.data.length ? (
+            <div className="h-40 flex items-center justify-center text-muted-foreground text-sm">
+              No expense data for {periodLabel}
+            </div>
+          ) : catView === "chart" ? (
+            <div>
+              <ResponsiveContainer width="100%" height={220}>
+                <PieChart>
+                  <Pie data={byCategory.data} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="amount">
+                    {byCategory.data.map((entry, i) => (
+                      <Cell key={i} fill={entry.categoryColor} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(v: number) => formatCurrency(v)} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="space-y-2.5 mt-3 max-h-52 overflow-y-auto pr-1">
+                {byCategory.data.map((cat, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <span className="text-muted-foreground text-xs w-4 text-right flex-shrink-0">{i + 1}</span>
+                    <div className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-sm"
+                      style={{ backgroundColor: `${cat.categoryColor}20`, color: cat.categoryColor }}>
+                      {cat.categoryIcon}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="text-sm font-medium truncate">{cat.categoryName}</span>
+                        <span className="text-sm font-semibold ml-2 flex-shrink-0">{formatCurrency(cat.amount)}</span>
                       </div>
-                      <div className="flex gap-2 items-center flex-shrink-0">
-                        <span className="font-medium">{formatCurrency(cat.amount)}</span>
-                        <span className="text-muted-foreground text-xs">{cat.percentage.toFixed(1)}%</span>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 bg-muted rounded-full h-1.5 overflow-hidden">
+                          <div className="h-full rounded-full transition-all" style={{ width: `${cat.percentage}%`, backgroundColor: cat.categoryColor }} />
+                        </div>
+                        <span className="text-xs text-muted-foreground w-9 text-right flex-shrink-0">{cat.percentage.toFixed(1)}%</span>
                       </div>
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ))}
               </div>
-            )}
-          </CardContent>
-        </Card>
+            </div>
+          ) : (
+            /* Table view */
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-8">#</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead className="text-right hidden sm:table-cell">Txns</TableHead>
+                    <TableHead className="text-right hidden sm:table-cell">Avg/txn</TableHead>
+                    <TableHead className="text-right">Share</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {byCategory.data.map((cat, i) => (
+                    <TableRow key={i}>
+                      <TableCell className="text-muted-foreground text-xs font-medium">{i + 1}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-sm"
+                            style={{ backgroundColor: `${cat.categoryColor}20`, color: cat.categoryColor }}>
+                            {cat.categoryIcon}
+                          </div>
+                          <span className="font-medium text-sm">{cat.categoryName}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right font-semibold">{formatCurrency(cat.amount)}</TableCell>
+                      <TableCell className="text-right text-muted-foreground hidden sm:table-cell">{cat.count}</TableCell>
+                      <TableCell className="text-right text-muted-foreground hidden sm:table-cell">
+                        {cat.count > 0 ? formatCurrency(cat.amount / cat.count) : "—"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <div className="w-16 bg-muted rounded-full h-1.5 hidden sm:block overflow-hidden">
+                            <div className="h-full rounded-full" style={{ width: `${cat.percentage}%`, backgroundColor: cat.categoryColor }} />
+                          </div>
+                          <span className="text-sm font-medium" style={{ color: cat.categoryColor }}>
+                            {cat.percentage.toFixed(1)}%
+                          </span>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              {/* Totals row */}
+              <div className="flex items-center justify-between pt-3 px-4 border-t mt-1">
+                <span className="text-sm font-semibold">Total</span>
+                <span className="text-sm font-bold">{formatCurrency(byCategory.data.reduce((s, c) => s + c.amount, 0))}</span>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-        {/* Daily spending bar */}
-        <Card>
-          <CardHeader><CardTitle>Income vs Expenses</CardTitle></CardHeader>
-          <CardContent>
-            {isDailyLoading ? <Skeleton className="h-64 rounded-xl" /> : !daily?.data.length ? (
-              <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">No data for {periodLabel}</div>
-            ) : (
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={daily.data} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" />
-                  <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={(v) => v.slice(5)} />
-                  <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `₹${v >= 1000 ? `${(v/1000).toFixed(0)}k` : v}`} />
-                  <Tooltip formatter={(v: number) => formatCurrency(v)} />
-                  <Legend />
-                  <Bar dataKey="amount" name="Expenses" fill="#ef4444" radius={[4,4,0,0]} />
-                  <Bar dataKey="income" name="Income" fill="#22c55e" radius={[4,4,0,0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+      {/* Income vs Expenses bar chart */}
+      <Card>
+        <CardHeader><CardTitle>Income vs Expenses Over Time</CardTitle></CardHeader>
+        <CardContent>
+          {isDailyLoading ? <Skeleton className="h-64 rounded-xl" /> : !daily?.data.length ? (
+            <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">No data for {periodLabel}</div>
+          ) : (
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={daily.data} margin={{ top: 5, right: 5, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" />
+                <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={(v) => v.slice(5)} />
+                <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `₹${v >= 1000 ? `${(v/1000).toFixed(0)}k` : v}`} />
+                <Tooltip formatter={(v: number) => formatCurrency(v)} />
+                <Legend />
+                <Bar dataKey="amount" name="Expenses" fill="#ef4444" radius={[4,4,0,0]} />
+                <Bar dataKey="income" name="Income" fill="#22c55e" radius={[4,4,0,0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

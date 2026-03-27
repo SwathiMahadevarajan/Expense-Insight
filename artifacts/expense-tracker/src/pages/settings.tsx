@@ -95,6 +95,14 @@ function GmailSection() {
   const { isAuthenticated, accessToken, login } = useGoogleAuth();
   const [isSyncing, setIsSyncing] = React.useState(false);
   const [lastSync, setLastSync] = React.useState<Date | null>(null);
+  const [syncResult, setSyncResult] = React.useState<{ imported: number; skipped: number; errors: number } | null>(null);
+
+  // Date range for targeted sync
+  const defaultFrom = new Date();
+  defaultFrom.setMonth(defaultFrom.getMonth() - 1);
+  const [fromDate, setFromDate] = React.useState(defaultFrom.toISOString().split("T")[0]);
+  const [toDate, setToDate] = React.useState(new Date().toISOString().split("T")[0]);
+  const [useCustomRange, setUseCustomRange] = React.useState(false);
 
   React.useEffect(() => {
     getGmailStatus().then(s => setLastSync(s.lastSyncAt));
@@ -103,10 +111,15 @@ function GmailSection() {
   const handleSync = async () => {
     if (!accessToken) { toast({ title: "Please sign in with Google first", variant: "destructive" }); return; }
     setIsSyncing(true);
+    setSyncResult(null);
     try {
-      const result = await syncGmail(accessToken);
+      const options = useCustomRange
+        ? { fromDate: new Date(fromDate), toDate: new Date(toDate + "T23:59:59") }
+        : {};
+      const result = await syncGmail(accessToken, options);
       const newStatus = await getGmailStatus();
       setLastSync(newStatus.lastSyncAt);
+      setSyncResult(result);
       toast({ title: `Sync complete — ${result.imported} new transaction${result.imported !== 1 ? "s" : ""} imported` });
     } catch (e) {
       toast({ title: "Sync failed. Check your Google permissions.", variant: "destructive" });
@@ -119,7 +132,7 @@ function GmailSection() {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2"><Mail className="w-5 h-5 text-green-500" /> Gmail Auto-Import</CardTitle>
-        <CardDescription>Automatically import bank transaction alerts from Gmail.</CardDescription>
+        <CardDescription>Import bank transaction alerts from Gmail directly into SmartTrack.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {!isAuthenticated ? (
@@ -143,20 +156,81 @@ function GmailSection() {
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="p-4 bg-green-50 border border-green-200 rounded-xl flex gap-3">
-              <CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
-              <div>
+            <div className="p-3 bg-green-50 border border-green-200 rounded-xl flex gap-3 items-center">
+              <CheckCircle2 className="w-5 h-5 text-green-500 flex-shrink-0" />
+              <div className="flex-1">
                 <p className="font-medium text-green-800 text-sm">Google account connected</p>
                 {lastSync && <p className="text-green-700 text-xs">Last sync: {lastSync.toLocaleString("en-IN")}</p>}
               </div>
             </div>
-            <div className="text-sm text-muted-foreground bg-muted/30 rounded-xl p-3 space-y-1">
-              <p className="font-medium text-foreground text-xs">What gets imported:</p>
-              <p className="text-xs">UPI alerts · NEFT/IMPS notifications · Debit/credit card alerts · Bank transaction emails</p>
+
+            {/* What gets imported */}
+            <div className="bg-muted/40 rounded-xl p-3">
+              <p className="font-medium text-xs mb-1">What gets read from Gmail:</p>
+              <p className="text-xs text-muted-foreground">UPI payment alerts · NEFT/IMPS notifications · Debit/credit card SMS forwards · Bank transaction confirmation emails</p>
+              <p className="text-xs text-muted-foreground mt-1">SmartTrack reads emails <strong>read-only</strong> and never stores your email content — only the extracted amount, merchant and date.</p>
             </div>
+
+            {/* Date range toggle */}
+            <div className="border rounded-xl overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setUseCustomRange(v => !v)}
+                className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted/30 transition-colors"
+              >
+                <span>Sync a specific date range</span>
+                <span className={`text-xs px-2 py-0.5 rounded-full ${useCustomRange ? "bg-green-100 text-green-700" : "bg-muted text-muted-foreground"}`}>
+                  {useCustomRange ? "On" : "Off"}
+                </span>
+              </button>
+
+              {useCustomRange && (
+                <div className="px-4 pb-4 pt-1 border-t space-y-3">
+                  <p className="text-xs text-muted-foreground">Select the date range to scan. Useful for importing past months or a specific period.</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">From date</Label>
+                      <Input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)}
+                        max={toDate} className="text-sm" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">To date</Label>
+                      <Input type="date" value={toDate} onChange={e => setToDate(e.target.value)}
+                        min={fromDate} max={new Date().toISOString().split("T")[0]} className="text-sm" />
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground italic">
+                    Scans up to 100 emails in this range. Already-imported emails are skipped automatically.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Sync result */}
+            {syncResult && (
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-sm">
+                <div className="flex gap-4">
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-blue-700">{syncResult.imported}</p>
+                    <p className="text-xs text-blue-600">imported</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-muted-foreground">{syncResult.skipped}</p>
+                    <p className="text-xs text-muted-foreground">already had</p>
+                  </div>
+                  {syncResult.errors > 0 && (
+                    <div className="text-center">
+                      <p className="text-2xl font-bold text-red-600">{syncResult.errors}</p>
+                      <p className="text-xs text-red-500">errors</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             <Button onClick={handleSync} disabled={isSyncing} className="bg-green-500 hover:bg-green-600 text-white w-full">
               <RefreshCw className={`w-4 h-4 mr-2 ${isSyncing ? "animate-spin" : ""}`} />
-              {isSyncing ? "Syncing…" : "Sync Gmail Now"}
+              {isSyncing ? "Scanning Gmail…" : useCustomRange ? `Sync ${fromDate} → ${toDate}` : "Sync Gmail Now"}
             </Button>
           </div>
         )}
