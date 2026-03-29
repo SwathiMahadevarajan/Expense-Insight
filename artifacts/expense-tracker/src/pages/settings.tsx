@@ -10,7 +10,7 @@ import { Trash2, Edit2, Plus, Bell, Tags, Mail, CheckCircle2, XCircle, RefreshCw
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useGoogleAuth } from "@/lib/google-auth";
-import { syncGmail, getGmailStatus } from "@/lib/gmail";
+import { scanGmail, importSelectedTransactions, getGmailStatus } from "@/lib/gmail";
 import { exportBackup, importBackup } from "@/lib/db";
 import { requestNotificationPermission, sendLocalNotification } from "@/lib/notifications";
 import { useCategories, createCategory, updateCategory, deleteCategory } from "@/hooks/use-local-categories";
@@ -106,9 +106,10 @@ function GmailSection() {
     setIsSyncing(true); setSyncResult(null);
     try {
       const opts = useCustomRange ? { fromDate: new Date(fromDate), toDate: new Date(toDate + "T23:59:59") } : {};
-      const result = await syncGmail(accessToken, opts);
-      setLastSync(new Date()); setSyncResult(result);
-      toast({ title: `${result.imported} transaction${result.imported !== 1 ? "s" : ""} imported` });
+      const { transactions } = await scanGmail(accessToken, opts);
+      const imported = await importSelectedTransactions(transactions);
+      setLastSync(new Date()); setSyncResult({ imported, skipped: 0 });
+      toast({ title: `${imported} transaction${imported !== 1 ? "s" : ""} imported` });
     } catch { toast({ title: "Sync failed", variant: "destructive" }); }
     finally { setIsSyncing(false); }
   };
