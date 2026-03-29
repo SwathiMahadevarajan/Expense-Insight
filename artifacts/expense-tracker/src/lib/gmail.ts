@@ -205,9 +205,9 @@ export async function scanGmail(
 ): Promise<{ transactions: ParsedEmailTransaction[]; totalScanned: number }> {
   const { fromDate, toDate, maxResults = 200 } = options;
 
-  // Always default to 30 days back — never use lastSyncSetting for interactive scan
+  // Always default to 90 days back — never use lastSyncSetting for interactive scan
   // (lastSync is only for incremental background sync, not for manual scan)
-  const defaultFrom = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const defaultFrom = Date.now() - 90 * 24 * 60 * 60 * 1000;
   const afterTimestamp = Math.floor((fromDate ? fromDate.getTime() : defaultFrom) / 1000);
 
   // Keep query intentionally BROAD — category filters excluded because Indian bank

@@ -39,7 +39,7 @@ function GmailImportPanel({ onClose }: { onClose: () => void }) {
   const [selectedTempIds, setSelectedTempIds] = React.useState<Set<string>>(new Set());
 
   const defaultFrom = React.useMemo(() => {
-    const d = new Date(); d.setMonth(d.getMonth() - 1); return d.toISOString().split("T")[0];
+    const d = new Date(); d.setMonth(d.getMonth() - 3); return d.toISOString().split("T")[0];
   }, []);
   const [fromDate, setFromDate] = React.useState(defaultFrom);
   const [toDate, setToDate] = React.useState(new Date().toISOString().split("T")[0]);

@@ -21,12 +21,27 @@ if (!basePath) {
   throw new Error("BASE_PATH environment variable is required but was not provided.");
 }
 
+// Custom plugin: allow the dev-mode service worker (served from /dev-dist/sw.js)
+// to control the root scope "/" by adding the Service-Worker-Allowed header.
+const swScopePlugin = {
+  name: "sw-allowed-scope",
+  configureServer(server: any) {
+    server.middlewares.use((req: any, res: any, next: any) => {
+      if (req.url && req.url.includes("sw.js")) {
+        res.setHeader("Service-Worker-Allowed", "/");
+      }
+      next();
+    });
+  },
+};
+
 export default defineConfig({
   base: basePath,
   plugins: [
     react(),
     tailwindcss(),
     runtimeErrorOverlay(),
+    swScopePlugin,
     VitePWA({
       registerType: "autoUpdate",
       includeAssets: ["favicon.ico", "icons/*.png"],
