@@ -205,29 +205,23 @@ export async function scanGmail(
 ): Promise<{ transactions: ParsedEmailTransaction[]; totalScanned: number }> {
   const { fromDate, toDate, maxResults = 200 } = options;
 
-  let afterTimestamp: number;
-  if (fromDate) {
-    afterTimestamp = Math.floor(fromDate.getTime() / 1000);
-  } else {
-    const lastSyncSetting = await db.settings.get("gmail_last_sync");
-    const lastSync = lastSyncSetting
-      ? parseInt(lastSyncSetting.value)
-      : Date.now() - 30 * 24 * 60 * 60 * 1000;
-    afterTimestamp = Math.floor(lastSync / 1000);
-  }
+  // Always default to 30 days back — never use lastSyncSetting for interactive scan
+  // (lastSync is only for incremental background sync, not for manual scan)
+  const defaultFrom = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const afterTimestamp = Math.floor((fromDate ? fromDate.getTime() : defaultFrom) / 1000);
 
-  // Broad query that covers all major Indian bank alert formats
+  // Keep query intentionally BROAD — category filters excluded because Indian bank
+  // transaction alerts (HDFC, ICICI, Axis, etc.) routinely land in Gmail's "Updates"
+  // tab, which -category:updates would silently block. Content-based filtering in
+  // parseEmailForTransaction() handles false positives instead.
   let query = [
     `after:${afterTimestamp}`,
-    `(debited OR credited OR "used for a transaction" OR "transaction of INR" OR "transaction of Rs" OR "UPI payment" OR "NEFT" OR "IMPS" OR "bank alert" OR "transaction alert" OR "account alert")`,
-    `-category:promotions`,
-    `-category:social`,
-    `-category:updates`,
+    `(debited OR credited OR "has been used" OR "transaction of" OR "UPI" OR "NEFT" OR "IMPS" OR "transaction alert" OR "account alert")`,
     `-subject:OTP`,
+    `-subject:"one time password"`,
     `-subject:"bill generated"`,
-    `-subject:"minimum amount"`,
+    `-subject:"minimum amount due"`,
     `-subject:"payment due"`,
-    `-subject:statement`,
   ].join(" ");
 
   if (toDate) {

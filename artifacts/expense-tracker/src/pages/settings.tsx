@@ -255,6 +255,34 @@ function PWASection() {
   const [notifPermission, setNotifPermission] = React.useState(
     "Notification" in window ? Notification.permission : "not-supported"
   );
+  const [installable, setInstallable] = React.useState(() => !!(window as any).__pwaInstallPrompt);
+  const [alreadyInstalled, setAlreadyInstalled] = React.useState(
+    () => window.matchMedia("(display-mode: standalone)").matches
+  );
+
+  React.useEffect(() => {
+    const onReady = () => setInstallable(true);
+    const onInstalled = () => { setInstallable(false); setAlreadyInstalled(true); };
+    window.addEventListener("pwa-prompt-ready", onReady);
+    window.addEventListener("pwa-installed", onInstalled);
+    return () => {
+      window.removeEventListener("pwa-prompt-ready", onReady);
+      window.removeEventListener("pwa-installed", onInstalled);
+    };
+  }, []);
+
+  const handleInstall = async () => {
+    const prompt = (window as any).__pwaInstallPrompt;
+    if (!prompt) return;
+    prompt.prompt();
+    const { outcome } = await prompt.userChoice;
+    if (outcome === "accepted") {
+      toast({ title: "SmartTrack is being installed!" });
+      setInstallable(false);
+      delete (window as any).__pwaInstallPrompt;
+    }
+  };
+
   const handleNotifPermission = async () => {
     const granted = await requestNotificationPermission();
     setNotifPermission(Notification.permission);
@@ -270,20 +298,50 @@ function PWASection() {
     <Card>
       <CardHeader><CardTitle className="flex items-center gap-2"><Smartphone className="w-5 h-5 text-green-500" /> Install as App</CardTitle></CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid sm:grid-cols-2 gap-4">
+
+        {/* One-click install button (Android / Desktop Chrome) */}
+        {alreadyInstalled ? (
+          <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-xl">
+            <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
+            <p className="text-green-800 text-sm font-medium">SmartTrack is installed on this device</p>
+          </div>
+        ) : installable ? (
+          <div className="flex items-center justify-between gap-4 p-4 bg-green-50 border border-green-200 rounded-xl">
+            <div>
+              <p className="font-semibold text-green-800 text-sm">Install SmartTrack</p>
+              <p className="text-green-700 text-xs mt-0.5">Works offline, opens like a native app</p>
+            </div>
+            <Button onClick={handleInstall} className="bg-green-500 hover:bg-green-600 text-white flex-shrink-0">
+              <Smartphone className="w-4 h-4 mr-2" /> Install
+            </Button>
+          </div>
+        ) : (
+          <div className="p-3 bg-muted/40 rounded-xl text-xs text-muted-foreground">
+            To install, open this page in Chrome / Safari on your phone or desktop. The browser will offer an install option automatically.
+          </div>
+        )}
+
+        {/* iOS manual steps */}
+        <div className="grid sm:grid-cols-2 gap-3">
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-            <p className="font-semibold text-blue-800 text-sm mb-1">📱 iOS</p>
+            <p className="font-semibold text-blue-800 text-sm mb-1">📱 iPhone / iPad (Safari)</p>
             <ol className="text-blue-700 text-xs space-y-1 list-decimal list-inside">
-              <li>Open in Safari</li><li>Tap Share → Add to Home Screen</li><li>Tap Add</li>
+              <li>Open in Safari</li>
+              <li>Tap the Share icon</li>
+              <li>Tap "Add to Home Screen"</li>
             </ol>
           </div>
           <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-            <p className="font-semibold text-green-800 text-sm mb-1">🤖 Android</p>
+            <p className="font-semibold text-green-800 text-sm mb-1">🤖 Android (Chrome)</p>
             <ol className="text-green-700 text-xs space-y-1 list-decimal list-inside">
-              <li>Open in Chrome</li><li>Tap 3-dot menu</li><li>Install App</li>
+              <li>Open in Chrome</li>
+              <li>Tap the 3-dot menu</li>
+              <li>Tap "Add to Home Screen"</li>
             </ol>
           </div>
         </div>
+
+        {/* Push notifications */}
         <div className="border rounded-xl p-4 flex items-center justify-between gap-3">
           <div>
             <p className="font-medium text-sm">Push Notifications</p>
