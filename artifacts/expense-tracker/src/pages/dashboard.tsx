@@ -1,21 +1,37 @@
+import React from "react";
 import { useInsightsSummary } from "@/hooks/use-local-insights";
 import { useTransactions } from "@/hooks/use-local-transactions";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowDownRight, ArrowUpRight, Wallet, TrendingUp } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { ArrowDownRight, ArrowUpRight, Wallet, TrendingUp, Mail } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { GmailImportPanel } from "@/components/gmail-import-panel";
 
 export default function Dashboard() {
   const { data: summary, isLoading: isLoadingSummary } = useInsightsSummary("month");
   const { data: txData, isLoading: isLoadingTx } = useTransactions({ limit: 5 });
+  const [gmailOpen, setGmailOpen] = React.useState(false);
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-        <p className="text-muted-foreground mt-1">Your financial overview for this month.</p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+          <p className="text-muted-foreground mt-1">Your financial overview for this month.</p>
+        </div>
+        <Button
+          variant={gmailOpen ? "default" : "outline"}
+          size="sm"
+          className={gmailOpen ? "bg-green-500 hover:bg-green-600 text-white" : ""}
+          onClick={() => setGmailOpen(v => !v)}
+        >
+          <Mail className="w-4 h-4 mr-2" /> Import from Gmail
+        </Button>
       </div>
+
+      {gmailOpen && <GmailImportPanel onClose={() => setGmailOpen(false)} />}
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {isLoadingSummary ? (

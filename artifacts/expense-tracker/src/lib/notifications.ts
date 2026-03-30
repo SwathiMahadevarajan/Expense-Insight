@@ -32,7 +32,7 @@ export function scheduleNotifications(notifications: Array<{ title: string; mess
   const existingId = (window as unknown as Record<string, unknown>)._notifInterval;
   if (existingId) clearInterval(existingId as number);
 
-  if (Notification.permission !== "granted") return;
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
 
   const checkAndNotify = () => {
     const now = new Date();

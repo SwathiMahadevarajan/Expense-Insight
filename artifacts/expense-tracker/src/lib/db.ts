@@ -98,7 +98,12 @@ export async function seedDefaultData() {
 }
 
 export function generateId(): string {
-  return crypto.randomUUID();
+  // crypto.randomUUID() is not available on iOS < 15.4
+  if (crypto.randomUUID) return crypto.randomUUID();
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (crypto.getRandomValues(new Uint8Array(1))[0] & 15);
+    return (c === "x" ? r : (r & 0x3 | 0x8)).toString(16);
+  });
 }
 
 // Backup/restore

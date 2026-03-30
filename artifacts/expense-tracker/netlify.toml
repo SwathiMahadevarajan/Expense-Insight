@@ -1,3 +1,21 @@
 [build]
+  command = "node scripts/generate-icons.mjs && pnpm run build"
   publish = "dist/public"
   environment = { SECRETS_SCAN_OMIT_KEYS = "VITE_GOOGLE_CLIENT_ID" }
+
+# SPA fallback — all paths serve index.html so client-side routing works
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Allow the service worker to control the full "/" scope on Android/Chrome
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Service-Worker-Allowed = "/"
+
+[[headers]]
+  for = "/dev-dist/sw.js"
+  [headers.values]
+    Service-Worker-Allowed = "/"
