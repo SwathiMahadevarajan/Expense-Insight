@@ -64,8 +64,9 @@ export default defineConfig({
         ],
       },
       injectManifest: {
-        // Patterns to include in the precache manifest injected into the SW.
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+        // Use the WebWorker tsconfig so DOM types don't bleed into the SW
+        rollupFormat: "es",
       },
       devOptions: { enabled: true, type: "module" },
     }),
