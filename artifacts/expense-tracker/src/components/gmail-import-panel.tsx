@@ -181,55 +181,98 @@ export function GmailImportPanel({ onClose }: { onClose: () => void }) {
                 No new bank transaction emails found in this range. Try a wider date range.
               </div>
             ) : (
-              <div className="border rounded-xl overflow-hidden bg-white dark:bg-background">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted/40">
-                      <TableHead className="w-10">
-                        <Checkbox checked={allSelected} onCheckedChange={toggleAll} aria-label="Select all" />
-                      </TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead className="hidden sm:table-cell text-muted-foreground">Date</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {scanned.map(tx => {
-                      const selected = selectedTempIds.has(tx.tempId);
-                      return (
-                        <TableRow
-                          key={tx.tempId}
-                          className={`cursor-pointer ${selected ? "bg-green-50/60 dark:bg-green-950/10" : "opacity-60"}`}
-                          onClick={() => toggleOne(tx.tempId)}
-                        >
-                          <TableCell onClick={e => e.stopPropagation()}>
-                            <Checkbox checked={selected} onCheckedChange={() => toggleOne(tx.tempId)} aria-label="Select" />
-                          </TableCell>
-                          <TableCell>
-                            <p className="font-medium text-sm truncate max-w-[220px]">
-                              {tx.merchantName ?? tx.description}
-                            </p>
-                            <p className="text-xs text-muted-foreground truncate max-w-[220px]">{tx.subject}</p>
-                          </TableCell>
-                          <TableCell className="hidden sm:table-cell text-sm text-muted-foreground whitespace-nowrap">
-                            {formatDate(tx.date)}
-                          </TableCell>
-                          <TableCell className="text-right whitespace-nowrap">
-                            <div className="flex items-center justify-end gap-1">
-                              {tx.type === "income"
-                                ? <ArrowUpRight className="w-3.5 h-3.5 text-emerald-500" />
-                                : <ArrowDownRight className="w-3.5 h-3.5 text-red-500" />}
-                              <span className={`font-semibold text-sm ${tx.type === "income" ? "text-emerald-600" : "text-red-500"}`}>
-                                {formatCurrency(tx.amount)}
-                              </span>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
+              <>
+                {/* Mobile: card list — checkbox always visible, no truncation issues */}
+                <div className="sm:hidden space-y-2">
+                  {scanned.map(tx => {
+                    const selected = selectedTempIds.has(tx.tempId);
+                    return (
+                      <div
+                        key={tx.tempId}
+                        className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                          selected
+                            ? "bg-green-50 border-green-200 dark:bg-green-950/20 dark:border-green-800"
+                            : "border-border opacity-60"
+                        }`}
+                        onClick={() => toggleOne(tx.tempId)}
+                      >
+                        <Checkbox
+                          checked={selected}
+                          onCheckedChange={() => toggleOne(tx.tempId)}
+                          onClick={e => e.stopPropagation()}
+                          className="flex-shrink-0"
+                          aria-label="Select"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm truncate">
+                            {tx.merchantName ?? tx.description}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-0.5">{formatDate(tx.date)}</p>
+                        </div>
+                        <div className="flex items-center gap-0.5 flex-shrink-0">
+                          {tx.type === "income"
+                            ? <ArrowUpRight className="w-3.5 h-3.5 text-emerald-500" />
+                            : <ArrowDownRight className="w-3.5 h-3.5 text-red-500" />}
+                          <span className={`font-semibold text-sm ${tx.type === "income" ? "text-emerald-600" : "text-red-500"}`}>
+                            {formatCurrency(tx.amount)}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Desktop: table */}
+                <div className="hidden sm:block border rounded-xl overflow-hidden bg-white dark:bg-background">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/40">
+                        <TableHead className="w-10">
+                          <Checkbox checked={allSelected} onCheckedChange={toggleAll} aria-label="Select all" />
+                        </TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead className="text-muted-foreground">Date</TableHead>
+                        <TableHead className="text-right">Amount</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {scanned.map(tx => {
+                        const selected = selectedTempIds.has(tx.tempId);
+                        return (
+                          <TableRow
+                            key={tx.tempId}
+                            className={`cursor-pointer ${selected ? "bg-green-50/60 dark:bg-green-950/10" : "opacity-60"}`}
+                            onClick={() => toggleOne(tx.tempId)}
+                          >
+                            <TableCell onClick={e => e.stopPropagation()}>
+                              <Checkbox checked={selected} onCheckedChange={() => toggleOne(tx.tempId)} aria-label="Select" />
+                            </TableCell>
+                            <TableCell>
+                              <p className="font-medium text-sm truncate max-w-[220px]">
+                                {tx.merchantName ?? tx.description}
+                              </p>
+                              <p className="text-xs text-muted-foreground truncate max-w-[220px]">{tx.subject}</p>
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                              {formatDate(tx.date)}
+                            </TableCell>
+                            <TableCell className="text-right whitespace-nowrap">
+                              <div className="flex items-center justify-end gap-1">
+                                {tx.type === "income"
+                                  ? <ArrowUpRight className="w-3.5 h-3.5 text-emerald-500" />
+                                  : <ArrowDownRight className="w-3.5 h-3.5 text-red-500" />}
+                                <span className={`font-semibold text-sm ${tx.type === "income" ? "text-emerald-600" : "text-red-500"}`}>
+                                  {formatCurrency(tx.amount)}
+                                </span>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
             )}
           </div>
         )}

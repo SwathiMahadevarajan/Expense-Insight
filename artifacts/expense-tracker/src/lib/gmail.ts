@@ -1,4 +1,4 @@
-import { db, generateId, type Transaction } from "./db";
+import { db, generateId } from "./db";
 
 interface GmailMessage { id: string; threadId: string; }
 interface GmailMessageFull {
@@ -23,19 +23,28 @@ const TRUSTED_SENDER_RE =
 
 // --- Subjects that are definitely NOT transaction alerts ---
 const SKIP_SUBJECT_RE =
-  /\botp\b|one.time.pass|e-statement|password|reset|special offer|exclusive offer|pre.?approved|credit limit increase|bill generated|minimum amount due|payment due date|earn cashback|reward point|newsletter|marketing|congratul|welcome.*card|welcome.*account|feedback|survey|apply now|upgrade your|know your|dear customer.*offer/i;
+  /\botp\b|one.time.pass|e-statement|password|reset|special offer|exclusive offer|pre.?approved|credit limit increase|bill generated|minimum amount due|payment due date|earn cashback|reward point|newsletter|marketing|congratul|welcome.*card|welcome.*account|feedback|survey|apply now|upgrade your|know your|dear customer.*offer|get.{0,30}(?:₹|rs\.?|inr)?.{0,10}\d+.{0,20}cashback|cashback.{0,20}on.{0,40}(?:payment|paying|tax|bill|recharge|purchase)|avail.{0,30}(?:cashback|offer|reward)|save.{0,20}(?:with|using|on).{0,30}card/i;
 
 // --- Debit signals (covers all major Indian bank alert formats) ---
 const DEBIT_RE =
   /\b(debited|debit|paid|payment made|withdrawn|spent|charged|purchase|sent|transferred to|has been used|used at|used for a transaction|amount.*deducted|card.*used|tap.*pay|mandate.*executed|emi.*deducted|standing instruction|auto.?debit)\b/i;
 
-// --- Credit signals ---
+// --- Credit signals (must look like an actual credit, not a cashback offer) ---
 const CREDIT_RE =
-  /\b(credited|credit|received|refund|cashback|salary|deposited|transfer received|payment received|amount.*credited|money.*received|funds.*received|neft.*credit)\b/i;
+  /\b(credited|credit|received|refund|salary|deposited|transfer received|payment received|amount.*credited|money.*received|funds.*received|neft.*credit)\b/i;
 
-// --- Hard filters: skip if body matches these (extra promo guard) ---
+// --- Hard filters: skip if body or subject matches these promotional patterns ---
 const SKIP_BODY_RE =
   /click here to (apply|buy|shop|avail)|limited time offer|exclusive deal|shop now|buy now|upgrade now|pre.?approved offer|special discount|upto \d+% off|\d+% cashback on shopping/i;
+
+// --- Promotional offer pattern: "Get ₹X cashback", "Earn X cashback when you pay", etc.
+// These are marketing emails, not real transaction confirmations.
+const PROMO_OFFER_RE =
+  /\bget\b.{0,60}(?:₹|rs\.?|inr\s*)?\d.{0,20}\bcashback\b|\bcashback\b.{0,40}(?:on|when|by|if)\b.{0,60}(?:pay|using|with|transact)|\bavail\b.{0,40}\bcashback\b|\bexclusive\b.{0,30}\bcashback\b/i;
+
+// --- Words that should never appear in a real merchant name ---
+const INVALID_MERCHANT_RE =
+  /\b(?:cashback|reward|offer|discount|voucher|prize|win|upto|bonus|exclusive|limited|click|avail|earn reward)\b/i;
 
 async function gmailFetch(path: string, token: string) {
   const res = await fetch(`https://gmail.googleapis.com/gmail/v1/${path}`, {
@@ -93,6 +102,9 @@ function parseEmailForTransaction(
   // Hard filter on body content
   if (SKIP_BODY_RE.test(body)) return null;
 
+  // Skip promotional cashback/offer emails (e.g. "Get ₹500 cashback on income tax payment")
+  if (PROMO_OFFER_RE.test(text)) return null;
+
   // Must have a debit or credit signal
   const isDebit = DEBIT_RE.test(text);
   const isCredit = CREDIT_RE.test(text);
@@ -127,8 +139,11 @@ function parseEmailForTransaction(
     const m = text.match(p);
     const candidate = m?.[1]?.trim();
     if (candidate && candidate.length > 1 && candidate.length < 65) {
-      // Skip if the extracted "merchant" looks like a date or amount
+      // Skip if the extracted "merchant" looks like a date, amount, or promo text
       if (/^\d/.test(candidate)) continue;
+      if (INVALID_MERCHANT_RE.test(candidate)) continue;
+      // Skip if too many words — likely grabbed a sentence fragment, not a merchant name
+      if (candidate.split(/\s+/).length > 6) continue;
       merchantName = candidate.replace(/\s+/g, " ");
       break;
     }
@@ -171,9 +186,32 @@ function parseEmailForTransaction(
     if (re.test(haystack)) { categoryId = catId; break; }
   }
 
+  // Build a clean fallback description when no merchant name could be extracted.
+  // Prefer "HDFC UPI Debit" style labels over dumping the raw subject line.
+  const bankName =
+    /hdfc/i.test(from) ? "HDFC" :
+    /icici/i.test(from) ? "ICICI" :
+    /axis/i.test(from) ? "Axis" :
+    /kotak/i.test(from) ? "Kotak" :
+    /sbi/i.test(from) ? "SBI" :
+    /indusind/i.test(from) ? "IndusInd" :
+    /yesbank/i.test(from) ? "Yes Bank" :
+    /paytm/i.test(from) ? "Paytm" :
+    /phonepe/i.test(from) ? "PhonePe" :
+    /gpay|google/i.test(from) ? "Google Pay" :
+    null;
+  const txChannel =
+    /\bneft\b/i.test(text) ? "NEFT" :
+    /\bimps\b/i.test(text) ? "IMPS" :
+    /\bupi\b/i.test(text) ? "UPI" :
+    /\brtgs\b/i.test(text) ? "RTGS" :
+    null;
+  const fallback = [bankName, txChannel, type === "expense" ? "Debit" : "Credit"]
+    .filter(Boolean).join(" ") || (type === "expense" ? "Bank Debit" : "Bank Credit");
+
   const description = merchantName
     ? `${type === "expense" ? "Payment to" : "Receipt from"} ${merchantName}`
-    : subject.slice(0, 100) || "Bank transaction";
+    : fallback;
 
   return {
     tempId: generateId(),
