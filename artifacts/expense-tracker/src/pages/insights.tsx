@@ -1,5 +1,5 @@
 import React from "react";
-import { useInsightsSummary, useSpendingByCategory, useDailySpending, type InsightPeriod } from "@/hooks/use-local-insights";
+import { useInsightsSummary, useSpendingByCategory, useDailySpending, useWeekdaySpending, type InsightPeriod } from "@/hooks/use-local-insights";
 import { useTransactions } from "@/hooks/use-local-transactions";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
@@ -12,6 +12,103 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { TrendingDown, TrendingUp, Wallet, BarChart2, Table2, PieChart as PieIcon, ArrowDownRight, ArrowUpRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+
+// ── Weekday heatmap ─────────────────────────────────────────────────────────
+
+type WeekdayEntry = { day: string; amount: number; count: number };
+
+function WeekdayHeatmap({ data }: { data: WeekdayEntry[] }) {
+  const maxAmount = Math.max(...data.map(d => d.amount), 1);
+  const topDay    = data.reduce((best, d) => d.amount > best.amount ? d : best, data[0]);
+  const hasData   = data.some(d => d.amount > 0);
+
+  // Abbreviate amounts: ₹1.2k, ₹85
+  const fmt = (n: number) =>
+    n === 0 ? "—" : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${Math.round(n)}`;
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-7 gap-1.5 sm:gap-2">
+        {data.map((d) => {
+          const ratio  = d.amount / maxAmount;
+          const isTop  = hasData && d.day === topDay.day;
+          // Red spectrum: very light → deep red
+          const alpha  = ratio === 0 ? 0 : 0.10 + ratio * 0.80;
+          const bgStyle = ratio === 0
+            ? undefined
+            : { backgroundColor: `rgba(239, 68, 68, ${alpha})` };
+
+          return (
+            <div key={d.day} className="flex flex-col items-center gap-1.5">
+              {/* Cell */}
+              <div
+                className={[
+                  "relative w-full rounded-xl flex flex-col items-center justify-center py-2.5 gap-0.5",
+                  "transition-transform active:scale-95",
+                  ratio === 0 ? "bg-muted/60" : "",
+                  isTop ? "ring-2 ring-red-400/70 ring-offset-1" : "",
+                ].join(" ")}
+                style={bgStyle}
+                title={`${d.day}: ${formatCurrency(d.amount)} · ${d.count} txn${d.count !== 1 ? "s" : ""}`}
+              >
+                {isTop && (
+                  <span className="absolute -top-2.5 text-sm leading-none select-none">🔥</span>
+                )}
+                <span className={[
+                  "text-[10px] font-bold leading-none",
+                  ratio > 0.55 ? "text-white" : "text-foreground",
+                ].join(" ")}>
+                  {fmt(d.amount)}
+                </span>
+                {d.count > 0 && (
+                  <span className={[
+                    "text-[9px] leading-none",
+                    ratio > 0.55 ? "text-white/70" : "text-muted-foreground",
+                  ].join(" ")}>
+                    {d.count}×
+                  </span>
+                )}
+              </div>
+              {/* Day label */}
+              <span className={[
+                "text-[10px] font-medium",
+                isTop ? "text-red-500 font-semibold" : "text-muted-foreground",
+              ].join(" ")}>
+                {d.day}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {hasData ? (
+        <div className="flex items-center gap-3 bg-red-50/60 dark:bg-red-950/10 border border-red-100 dark:border-red-900/20 rounded-xl px-3 py-2.5">
+          <span className="text-xl leading-none">🔥</span>
+          <div>
+            <p className="text-sm font-semibold">
+              Peak day: <span className="text-red-600 dark:text-red-400">{topDay.day}</span>
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {formatCurrency(topDay.amount)} across {topDay.count} transaction{topDay.count !== 1 ? "s" : ""}
+            </p>
+          </div>
+          {/* Color legend */}
+          <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+            <span className="text-[10px] text-muted-foreground">Low</span>
+            <div className="flex gap-0.5">
+              {[0.1, 0.3, 0.55, 0.75, 0.92].map((a, i) => (
+                <div key={i} className="w-3 h-3 rounded-sm" style={{ backgroundColor: `rgba(239,68,68,${a})` }} />
+              ))}
+            </div>
+            <span className="text-[10px] text-muted-foreground">High</span>
+          </div>
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground text-center py-2">No expense data for this period.</p>
+      )}
+    </div>
+  );
+}
 
 type DrillCategory = {
   categoryId: string | null;
@@ -125,6 +222,7 @@ export default function Insights() {
   const { data: summary, isLoading: isLoadingSummary } = useInsightsSummary(period);
   const { data: byCategory, isLoading: isCatLoading } = useSpendingByCategory(period);
   const { data: daily, isLoading: isDailyLoading } = useDailySpending(period);
+  const { data: weekday, isLoading: isWeekdayLoading } = useWeekdaySpending(period);
   const { start, end } = usePeriodDates(period);
 
   const periodLabel = period === "week" ? "Last 7 days" : period === "month" ? "This month" : period === "quarter" ? "Last 3 months" : "This year";
@@ -312,6 +410,29 @@ export default function Insights() {
               </div>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Day-of-Week Heatmap */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2">
+            <span>Spending by Day of Week</span>
+            <span className="text-base leading-none">📅</span>
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">Which days do you spend the most?</p>
+        </CardHeader>
+        <CardContent>
+          {isWeekdayLoading ? (
+            <div className="space-y-3">
+              <div className="grid grid-cols-7 gap-1.5">
+                {Array.from({ length: 7 }).map((_, i) => <Skeleton key={i} className="h-14 rounded-xl" />)}
+              </div>
+              <Skeleton className="h-12 rounded-xl" />
+            </div>
+          ) : weekday ? (
+            <WeekdayHeatmap data={weekday} />
+          ) : null}
         </CardContent>
       </Card>
 

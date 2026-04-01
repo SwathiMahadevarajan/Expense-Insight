@@ -1,71 +1,47 @@
 import React from "react";
 import { Link, useLocation } from "wouter";
-import { 
-  LayoutDashboard, 
-  ArrowLeftRight, 
-  PieChart, 
-  Wallet, 
+import {
+  LayoutDashboard,
+  ArrowLeftRight,
+  PieChart,
+  Wallet,
   Settings,
-  Menu,
-  Plus
+  Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { TransactionDialog } from "../transaction-dialog";
 
 const NAV_ITEMS = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/transactions", label: "Transactions", icon: ArrowLeftRight },
-  { href: "/insights", label: "Insights", icon: PieChart },
-  { href: "/accounts", label: "Accounts", icon: Wallet },
-  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/",             label: "Dashboard",    mobileLabel: "Home",     icon: LayoutDashboard },
+  { href: "/transactions", label: "Transactions", mobileLabel: "Txns",     icon: ArrowLeftRight  },
+  { href: "/insights",     label: "Insights",     mobileLabel: "Insights", icon: PieChart        },
+  { href: "/accounts",     label: "Accounts",     mobileLabel: "Accounts", icon: Wallet          },
+  { href: "/settings",     label: "Settings",     mobileLabel: "Settings", icon: Settings        },
 ];
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const [isTxDialogOpen, setIsTxDialogOpen] = React.useState(false);
 
-  const NavLinks = ({ onClick }: { onClick?: () => void }) => (
-    <div className="flex flex-col gap-2 p-4">
-      {NAV_ITEMS.map((item) => {
-        const isActive = location === item.href;
-        return (
-          <Link key={item.href} href={item.href}>
-            <span
-              onClick={onClick}
-              className={cn(
-                "flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all duration-200 cursor-pointer",
-                isActive
-                  ? "bg-primary text-primary-foreground shadow-md shadow-primary/20"
-                  : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-              )}
-            >
-              <item.icon className="w-5 h-5" />
-              {item.label}
-            </span>
-          </Link>
-        );
-      })}
-    </div>
-  );
+  const isActive = (href: string) =>
+    href === "/" ? location === "/" : location === href;
 
   return (
     <div className="min-h-screen bg-background flex w-full">
-      {/* Desktop Sidebar */}
+
+      {/* ── Desktop Sidebar ─────────────────────────────────────── */}
       <aside className="hidden md:flex w-64 flex-col border-r bg-card shadow-sm z-10 sticky top-0 h-screen">
         <div className="p-6 flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shadow-lg shadow-primary/30">
             <Wallet className="w-5 h-5 text-primary-foreground" />
           </div>
-          <span className="font-display font-bold text-xl tracking-tight text-foreground">
-            SmartTrack
-          </span>
+          <span className="font-display font-bold text-xl tracking-tight">SmartTrack</span>
         </div>
-        
+
         <div className="px-4 pb-4">
-          <Button 
-            className="w-full hover-elevate shadow-md shadow-primary/20" 
+          <Button
+            className="w-full hover-elevate shadow-md shadow-primary/20"
             size="lg"
             onClick={() => setIsTxDialogOpen(true)}
           >
@@ -75,51 +51,85 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         <nav className="flex-1 overflow-y-auto">
-          <NavLinks />
+          <div className="flex flex-col gap-1 p-4">
+            {NAV_ITEMS.map((item) => (
+              <Link key={item.href} href={item.href}>
+                <span className={cn(
+                  "flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all duration-200 cursor-pointer",
+                  isActive(item.href)
+                    ? "bg-primary text-primary-foreground shadow-md shadow-primary/20"
+                    : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                )}>
+                  <item.icon className="w-5 h-5" />
+                  {item.label}
+                </span>
+              </Link>
+            ))}
+          </div>
         </nav>
       </aside>
 
-      {/* Main Content */}
+      {/* ── Main Content ─────────────────────────────────────────── */}
       <main className="flex-1 flex flex-col min-w-0">
-        {/* Mobile Header */}
-        <header className="md:hidden flex items-center justify-between p-4 border-b bg-card sticky top-0 z-20">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-              <Wallet className="w-5 h-5 text-primary-foreground" />
+
+        {/* Mobile Header — minimal branding + quick-add */}
+        <header className="md:hidden flex items-center justify-between px-4 py-3 border-b bg-card/95 backdrop-blur-sm sticky top-0 z-20">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-primary flex items-center justify-center shadow-md shadow-primary/30">
+              <Wallet className="w-4 h-4 text-primary-foreground" />
             </div>
-            <span className="font-display font-bold text-xl">SmartTrack</span>
+            <span className="font-display font-bold text-lg tracking-tight">SmartTrack</span>
           </div>
-          <div className="flex items-center gap-2">
-            <Button size="icon" variant="ghost" onClick={() => setIsTxDialogOpen(true)}>
-              <Plus className="w-5 h-5" />
-            </Button>
-            <Sheet>
-              <SheetTrigger asChild>
-                <Button size="icon" variant="ghost">
-                  <Menu className="w-5 h-5" />
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="left" className="w-72 p-0">
-                <div className="p-6 pb-2">
-                  <span className="font-display font-bold text-2xl">Menu</span>
-                </div>
-                <NavLinks />
-              </SheetContent>
-            </Sheet>
-          </div>
+          <Button
+            size="sm"
+            className="rounded-full px-4 h-9 shadow-md shadow-primary/20"
+            onClick={() => setIsTxDialogOpen(true)}
+          >
+            <Plus className="w-4 h-4 mr-1.5" />
+            Add
+          </Button>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-4 md:p-8">
+        {/* Page content — extra bottom padding on mobile for bottom nav */}
+        <div className="flex-1 overflow-y-auto p-4 pb-28 md:pb-8 md:p-8">
           <div className="max-w-6xl mx-auto w-full">
             {children}
           </div>
         </div>
       </main>
 
-      <TransactionDialog 
-        open={isTxDialogOpen} 
-        onOpenChange={setIsTxDialogOpen} 
-      />
+      {/* ── Mobile Bottom Navigation ──────────────────────────────── */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-card/95 backdrop-blur-sm border-t">
+        <div className="flex items-stretch h-16">
+          {NAV_ITEMS.map((item) => {
+            const active = isActive(item.href);
+            return (
+              <Link key={item.href} href={item.href} className="flex-1">
+                <span className={cn(
+                  "relative flex flex-col items-center justify-center h-full gap-1 cursor-pointer transition-all",
+                  active ? "text-primary" : "text-muted-foreground"
+                )}>
+                  {/* Active indicator bar */}
+                  {active && (
+                    <span className="absolute top-0 left-3 right-3 h-0.5 rounded-full bg-primary" />
+                  )}
+                  <item.icon
+                    className={cn("w-[22px] h-[22px] transition-transform", active && "scale-110")}
+                    strokeWidth={active ? 2.5 : 1.8}
+                  />
+                  <span className="text-[10px] font-medium leading-none tracking-wide">
+                    {item.mobileLabel}
+                  </span>
+                </span>
+              </Link>
+            );
+          })}
+        </div>
+        {/* iOS home-indicator safe area */}
+        <div className="bg-card/95" style={{ height: "env(safe-area-inset-bottom, 0px)" }} />
+      </nav>
+
+      <TransactionDialog open={isTxDialogOpen} onOpenChange={setIsTxDialogOpen} />
     </div>
   );
 }
