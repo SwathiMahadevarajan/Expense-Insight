@@ -1,5 +1,5 @@
 [build]
-  command = "node scripts/generate-icons.mjs && pnpm run build"
+  command = "pnpm add -w sharp --ignore-scripts 2>/dev/null; node scripts/generate-icons.mjs && pnpm run build"
   publish = "dist/public"
   environment = { SECRETS_SCAN_OMIT_KEYS = "VITE_GOOGLE_CLIENT_ID" }
 

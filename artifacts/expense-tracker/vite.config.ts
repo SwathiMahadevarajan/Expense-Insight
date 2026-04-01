@@ -35,6 +35,11 @@ export default defineConfig({
     runtimeErrorOverlay(),
     swScopePlugin,
     VitePWA({
+      // injectManifest lets us write a custom SW with periodic sync + notification click.
+      // VitePWA compiles src/service-worker.ts and injects the precache manifest into it.
+      strategies: "injectManifest",
+      srcDir: "src",
+      filename: "service-worker.ts",
       registerType: "autoUpdate",
       includeAssets: ["favicon.ico", "icons/*.png"],
       manifest: {
@@ -58,16 +63,9 @@ export default defineConfig({
           { src: "icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" },
         ],
       },
-      workbox: {
+      injectManifest: {
+        // Patterns to include in the precache manifest injected into the SW.
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
-        navigateFallback: null,
-        runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
-            handler: "CacheFirst",
-            options: { cacheName: "google-fonts-cache", expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 } },
-          },
-        ],
       },
       devOptions: { enabled: true, type: "module" },
     }),

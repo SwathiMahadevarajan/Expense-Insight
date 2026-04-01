@@ -12,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useGoogleAuth } from "@/lib/google-auth";
 import { scanGmail, importSelectedTransactions, getGmailStatus } from "@/lib/gmail";
 import { exportBackup, importBackup } from "@/lib/db";
-import { requestNotificationPermission, sendLocalNotification } from "@/lib/notifications";
+import { requestNotificationPermission, sendLocalNotification, registerPeriodicSync, isPeriodicSyncRegistered } from "@/lib/notifications";
 import { useCategories, createCategory, updateCategory, deleteCategory } from "@/hooks/use-local-categories";
 import { useNotificationSettings, createNotification, updateNotification, deleteNotification } from "@/hooks/use-local-notifications";
 import type { Category, NotificationSetting } from "@/lib/db";
@@ -252,19 +252,24 @@ function BackupSection() {
 
 function PWASection() {
   const { toast } = useToast();
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const isAndroid = /android/i.test(navigator.userAgent);
+
   const [notifPermission, setNotifPermission] = React.useState(
     "Notification" in window ? Notification.permission : "not-supported"
   );
+  const [periodicSyncActive, setPeriodicSyncActive] = React.useState(false);
   const [installable, setInstallable] = React.useState(() => !!(window as any).__pwaInstallPrompt);
   const [alreadyInstalled, setAlreadyInstalled] = React.useState(
     () => window.matchMedia("(display-mode: standalone)").matches
   );
 
   React.useEffect(() => {
-    const onReady = () => setInstallable(true);
+    const onReady    = () => setInstallable(true);
     const onInstalled = () => { setInstallable(false); setAlreadyInstalled(true); };
     window.addEventListener("pwa-prompt-ready", onReady);
     window.addEventListener("pwa-installed", onInstalled);
+    isPeriodicSyncRegistered().then(setPeriodicSyncActive);
     return () => {
       window.removeEventListener("pwa-prompt-ready", onReady);
       window.removeEventListener("pwa-installed", onInstalled);
@@ -287,19 +292,30 @@ function PWASection() {
     const granted = await requestNotificationPermission();
     setNotifPermission(Notification.permission);
     if (granted) {
+      // Register background sync for Android Chrome
+      await registerPeriodicSync();
+      setPeriodicSyncActive(await isPeriodicSyncRegistered());
+      await sendLocalNotification("Notifications enabled ✓", "You'll receive expense reminders here.");
       toast({ title: "Notifications enabled!" });
-      sendLocalNotification("Notifications enabled", "You'll receive expense reminders here.");
     } else {
-      toast({ title: "Notifications blocked — enable in browser settings", variant: "destructive" });
+      toast({
+        title: "Notifications blocked",
+        description: "Enable them in your browser / phone settings.",
+        variant: "destructive",
+      });
     }
   };
 
   return (
     <Card>
-      <CardHeader><CardTitle className="flex items-center gap-2"><Smartphone className="w-5 h-5 text-green-500" /> Install as App</CardTitle></CardHeader>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Smartphone className="w-5 h-5 text-green-500" /> Install as App
+        </CardTitle>
+      </CardHeader>
       <CardContent className="space-y-4">
 
-        {/* One-click install button (Android / Desktop Chrome) */}
+        {/* Install banner */}
         {alreadyInstalled ? (
           <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-xl">
             <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
@@ -316,46 +332,111 @@ function PWASection() {
             </Button>
           </div>
         ) : (
-          <div className="p-3 bg-muted/40 rounded-xl text-xs text-muted-foreground">
-            To install, open this page in Chrome / Safari on your phone or desktop. The browser will offer an install option automatically.
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+              <p className="font-semibold text-blue-800 text-sm mb-1">📱 iPhone / iPad (Safari)</p>
+              <ol className="text-blue-700 text-xs space-y-1 list-decimal list-inside">
+                <li>Open in Safari</li>
+                <li>Tap the Share icon ↑</li>
+                <li>Tap "Add to Home Screen"</li>
+              </ol>
+            </div>
+            <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+              <p className="font-semibold text-green-800 text-sm mb-1">🤖 Android (Chrome)</p>
+              <ol className="text-green-700 text-xs space-y-1 list-decimal list-inside">
+                <li>Open in Chrome</li>
+                <li>Tap the 3-dot menu ⋮</li>
+                <li>Tap "Add to Home Screen"</li>
+              </ol>
+            </div>
           </div>
         )}
 
-        {/* iOS manual steps */}
-        <div className="grid sm:grid-cols-2 gap-3">
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-            <p className="font-semibold text-blue-800 text-sm mb-1">📱 iPhone / iPad (Safari)</p>
-            <ol className="text-blue-700 text-xs space-y-1 list-decimal list-inside">
-              <li>Open in Safari</li>
-              <li>Tap the Share icon</li>
-              <li>Tap "Add to Home Screen"</li>
-            </ol>
+        {/* Notifications */}
+        <div className="border rounded-xl overflow-hidden">
+          <div className="flex items-center justify-between gap-3 p-4">
+            <div>
+              <p className="font-medium text-sm flex items-center gap-2">
+                <Bell className="w-4 h-4 text-green-500" /> Notifications
+              </p>
+              <Badge
+                variant={notifPermission === "granted" ? "default" : "secondary"}
+                className={`mt-1 ${notifPermission === "granted" ? "bg-green-500" : ""}`}
+              >
+                {notifPermission === "granted"
+                  ? "Enabled"
+                  : notifPermission === "denied"
+                  ? "Blocked in browser"
+                  : notifPermission === "not-supported"
+                  ? "Not supported"
+                  : "Not enabled"}
+              </Badge>
+            </div>
+            {notifPermission !== "granted" && notifPermission !== "not-supported" && (
+              <Button size="sm" onClick={handleNotifPermission} className="bg-green-500 hover:bg-green-600 text-white flex-shrink-0">
+                <Bell className="w-4 h-4 mr-2" /> Enable
+              </Button>
+            )}
+            {notifPermission === "granted" && (
+              <Button size="sm" variant="outline" onClick={() => sendLocalNotification("Test 🔔", "Notifications are working!")}>
+                Test
+              </Button>
+            )}
           </div>
-          <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-            <p className="font-semibold text-green-800 text-sm mb-1">🤖 Android (Chrome)</p>
-            <ol className="text-green-700 text-xs space-y-1 list-decimal list-inside">
-              <li>Open in Chrome</li>
-              <li>Tap the 3-dot menu</li>
-              <li>Tap "Add to Home Screen"</li>
-            </ol>
+
+          {/* Platform-specific explanation */}
+          <div className={`border-t px-4 py-3 text-xs space-y-2 ${
+            isIOS ? "bg-amber-50/60" : isAndroid ? "bg-green-50/60" : "bg-muted/30"
+          }`}>
+            {isIOS ? (
+              <>
+                <p className="font-semibold text-amber-800 flex items-center gap-1.5">
+                  <span>⚠️</span> iOS limitation
+                </p>
+                <p className="text-amber-700 leading-relaxed">
+                  Apple does not allow web apps to send notifications in the background without a push server.
+                  Reminders will only fire <strong>while SmartTrack is open</strong> on screen.
+                  For background notifications, install the app from the App Store (if available) or keep the PWA open.
+                </p>
+                <p className="text-amber-700">
+                  Make sure you have added SmartTrack to your Home Screen from Safari — notifications require iOS 16.4+ and the PWA to be installed.
+                </p>
+              </>
+            ) : isAndroid ? (
+              <>
+                <p className="font-semibold text-green-800 flex items-center gap-1.5">
+                  <span>🤖</span> Android background notifications
+                </p>
+                {periodicSyncActive ? (
+                  <p className="text-green-700 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
+                    Background sync active — reminders will fire even when the app is closed (installed PWA only).
+                  </p>
+                ) : (
+                  <p className="text-green-700 leading-relaxed">
+                    Install SmartTrack to your Home Screen from Chrome, then enable notifications to unlock
+                    background reminders that fire even when the app is closed.
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="text-muted-foreground">
+                Reminders fire while this tab is open. For background notifications on mobile, install SmartTrack as a PWA.
+              </p>
+            )}
           </div>
         </div>
 
-        {/* Push notifications */}
-        <div className="border rounded-xl p-4 flex items-center justify-between gap-3">
-          <div>
-            <p className="font-medium text-sm">Push Notifications</p>
-            <Badge variant={notifPermission === "granted" ? "default" : "secondary"}
-              className={`mt-1 ${notifPermission === "granted" ? "bg-green-500" : ""}`}>
-              {notifPermission === "granted" ? "Enabled" : notifPermission === "denied" ? "Blocked" : "Not set"}
-            </Badge>
+        {notifPermission === "denied" && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 space-y-1">
+            <p className="font-semibold">Notifications blocked by browser</p>
+            <p>
+              {isIOS
+                ? "Go to Settings → Safari → Advanced → Website Data, or re-install the PWA, then enable notifications."
+                : "Tap the lock icon in the address bar → Site settings → Notifications → Allow, then reload the page."}
+            </p>
           </div>
-          {notifPermission !== "granted" && notifPermission !== "not-supported" && (
-            <Button size="sm" onClick={handleNotifPermission} className="bg-green-500 hover:bg-green-600 text-white flex-shrink-0">
-              <Bell className="w-4 h-4 mr-2" /> Enable
-            </Button>
-          )}
-        </div>
+        )}
       </CardContent>
     </Card>
   );
