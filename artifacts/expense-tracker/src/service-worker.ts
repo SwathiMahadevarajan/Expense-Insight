@@ -1,6 +1,10 @@
 /// <reference lib="WebWorker" />
-// VitePWA injects the precache manifest into this variable at build time.
-declare const __WB_MANIFEST: Array<{ url: string; revision: string | null }>;
+// VitePWA injects the precache manifest here at build time.
+// The literal token `self.__WB_MANIFEST` is required by workbox-build's
+// inject-manifest step — do not rename or move this line.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const WB_MANIFEST: Array<{ url: string; revision: string | null }> =
+  (self as any).__WB_MANIFEST ?? [];
 
 // Cast self to the correct SW type — the WebWorker lib only provides
 // WorkerGlobalScope, but we're running as a ServiceWorker.
@@ -13,8 +17,7 @@ sw.addEventListener("install", (event: ExtendableEvent) => {
   sw.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      const urls = (typeof __WB_MANIFEST !== "undefined" ? __WB_MANIFEST : [])
-        .map((e) => e.url);
+      const urls = WB_MANIFEST.map((e: { url: string }) => e.url);
       return cache.addAll(urls).catch(() => {/* ignore individual asset failures */});
     })
   );
