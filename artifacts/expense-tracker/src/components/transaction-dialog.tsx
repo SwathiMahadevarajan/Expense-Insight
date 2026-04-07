@@ -8,18 +8,21 @@ import { createTransaction, updateTransaction } from "@/hooks/use-local-transact
 import { useAccounts } from "@/hooks/use-local-accounts";
 import { useCategories } from "@/hooks/use-local-categories";
 import { useToast } from "@/hooks/use-toast";
+import { Trash2 } from "lucide-react";
 
 interface TransactionDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   transactionToEdit?: any;
+  onDelete?: (id: string) => Promise<void>;
 }
 
-export function TransactionDialog({ open, onOpenChange, transactionToEdit }: TransactionDialogProps) {
+export function TransactionDialog({ open, onOpenChange, transactionToEdit, onDelete }: TransactionDialogProps) {
   const { toast } = useToast();
   const { data: accountsData } = useAccounts();
   const { data: categoriesData } = useCategories();
   const [isSaving, setIsSaving] = React.useState(false);
+  const [isDeleting, setIsDeleting] = React.useState(false);
 
   const [type, setType] = React.useState<"expense" | "income">("expense");
   const [amount, setAmount] = React.useState("");
@@ -156,11 +159,33 @@ export function TransactionDialog({ open, onOpenChange, transactionToEdit }: Tra
             <Input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Any extra notes..." />
           </div>
 
-          <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" disabled={isSaving} className="bg-green-500 hover:bg-green-600 text-white">
-              {isSaving ? "Saving…" : "Save"}
-            </Button>
+          <div className="flex items-center justify-between gap-2 pt-2">
+            {/* Delete — only shown when editing */}
+            {transactionToEdit && onDelete ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                disabled={isDeleting}
+                onClick={async () => {
+                  setIsDeleting(true);
+                  try { await onDelete(transactionToEdit.id); }
+                  catch { toast({ title: "Delete failed", variant: "destructive" }); }
+                  finally { setIsDeleting(false); }
+                }}
+              >
+                <Trash2 className="w-4 h-4 mr-1.5" />
+                {isDeleting ? "Deleting…" : "Delete"}
+              </Button>
+            ) : <span />}
+
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+              <Button type="submit" disabled={isSaving} className="bg-green-500 hover:bg-green-600 text-white">
+                {isSaving ? "Saving…" : "Save"}
+              </Button>
+            </div>
           </div>
         </form>
       </DialogContent>

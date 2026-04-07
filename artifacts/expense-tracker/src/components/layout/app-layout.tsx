@@ -7,6 +7,8 @@ import {
   Wallet,
   Settings,
   Plus,
+  Share,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -19,6 +21,50 @@ const NAV_ITEMS = [
   { href: "/accounts",     label: "Accounts",     mobileLabel: "Accounts", icon: Wallet          },
   { href: "/settings",     label: "Settings",     mobileLabel: "Settings", icon: Settings        },
 ];
+
+// ── iOS PWA install banner ────────────────────────────────────────────────
+function IOSInstallBanner() {
+  const [visible, setVisible] = React.useState(false);
+
+  React.useEffect(() => {
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const isStandalone =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (window.navigator as any).standalone === true;
+    if (isIOS && !isStandalone) {
+      const dismissed = sessionStorage.getItem("ios-install-dismissed");
+      if (!dismissed) setVisible(true);
+    }
+  }, []);
+
+  if (!visible) return null;
+
+  return (
+    <div className="md:hidden fixed bottom-20 left-3 right-3 z-40 bg-card border rounded-2xl shadow-xl p-4 flex items-start gap-3 animate-in slide-in-from-bottom-4 duration-300">
+      <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center flex-shrink-0 mt-0.5">
+        <Wallet className="w-5 h-5 text-primary-foreground" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="font-semibold text-sm">Install SmartTrack</p>
+        <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+          Tap the <Share className="inline w-3.5 h-3.5 mb-0.5" /> <strong>Share</strong> button
+          then <strong>"Add to Home Screen"</strong> to install the app.
+        </p>
+      </div>
+      <button
+        type="button"
+        className="flex-shrink-0 text-muted-foreground hover:text-foreground p-1"
+        onClick={() => {
+          sessionStorage.setItem("ios-install-dismissed", "1");
+          setVisible(false);
+        }}
+        aria-label="Dismiss"
+      >
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  );
+}
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -130,6 +176,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       </nav>
 
       <TransactionDialog open={isTxDialogOpen} onOpenChange={setIsTxDialogOpen} />
+      <IOSInstallBanner />
     </div>
   );
 }

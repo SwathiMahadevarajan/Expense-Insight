@@ -10,8 +10,49 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ArrowDownRight, ArrowUpRight, RefreshCw, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 
 type ScanPhase = "config" | "scanning" | "preview" | "importing";
+type DatePreset = "today" | "yesterday" | "last7" | "thisMonth" | "lastMonth" | "custom";
+
+const PRESETS: { label: string; value: DatePreset }[] = [
+  { label: "Today",      value: "today"      },
+  { label: "Yesterday",  value: "yesterday"  },
+  { label: "Last 7 days",value: "last7"      },
+  { label: "This month", value: "thisMonth"  },
+  { label: "Last month", value: "lastMonth"  },
+  { label: "Custom",     value: "custom"     },
+];
+
+function getPresetRange(preset: DatePreset, fromDate: string, toDate: string): { from: Date; to: Date } {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  switch (preset) {
+    case "today":
+      return { from: today, to: now };
+    case "yesterday": {
+      const y = new Date(today); y.setDate(y.getDate() - 1);
+      const yEnd = new Date(today.getTime() - 1);
+      return { from: y, to: yEnd };
+    }
+    case "last7": {
+      const w = new Date(today); w.setDate(w.getDate() - 6);
+      return { from: w, to: now };
+    }
+    case "thisMonth":
+      return { from: new Date(now.getFullYear(), now.getMonth(), 1), to: now };
+    case "lastMonth": {
+      const lmStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const lmEnd   = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+      return { from: lmStart, to: lmEnd };
+    }
+    case "custom":
+      return {
+        from: new Date(fromDate),
+        to:   new Date(toDate + "T23:59:59"),
+      };
+  }
+}
 
 export function GmailImportPanel({ onClose }: { onClose: () => void }) {
   const { toast } = useToast();
@@ -23,12 +64,13 @@ export function GmailImportPanel({ onClose }: { onClose: () => void }) {
   const [totalScanned, setTotalScanned] = React.useState(0);
   const [selectedTempIds, setSelectedTempIds] = React.useState<Set<string>>(new Set());
 
+  const [preset, setPreset] = React.useState<DatePreset>("thisMonth");
+
   const defaultFrom = React.useMemo(() => {
     const d = new Date(); d.setMonth(d.getMonth() - 3); return d.toISOString().split("T")[0];
   }, []);
   const [fromDate, setFromDate] = React.useState(defaultFrom);
   const [toDate, setToDate] = React.useState(new Date().toISOString().split("T")[0]);
-  const [useRange, setUseRange] = React.useState(false);
 
   React.useEffect(() => { getGmailStatus().then(s => setLastSync(s.lastSyncAt)); }, []);
 
@@ -48,8 +90,8 @@ export function GmailImportPanel({ onClose }: { onClose: () => void }) {
     if (!accessToken) { toast({ title: "Sign in with Google first", variant: "destructive" }); return; }
     setPhase("scanning");
     try {
-      const opts = useRange ? { fromDate: new Date(fromDate), toDate: new Date(toDate + "T23:59:59") } : {};
-      const result = await scanGmail(accessToken, opts);
+      const range = getPresetRange(preset, fromDate, toDate);
+      const result = await scanGmail(accessToken, { fromDate: range.from, toDate: range.to });
       setScanned(result.transactions);
       setTotalScanned(result.totalScanned);
       setSelectedTempIds(new Set(result.transactions.map(t => t.tempId)));
@@ -97,20 +139,41 @@ export function GmailImportPanel({ onClose }: { onClose: () => void }) {
               </div>
             ) : (
               <div className="space-y-3">
-                <div className="flex items-center gap-2 flex-wrap">
+                {/* Connected status row */}
+                <div className="flex items-center justify-between gap-2 flex-wrap">
                   <span className="flex items-center gap-1.5 text-sm text-green-700">
                     <span className="w-2 h-2 rounded-full bg-green-500" />
                     Google connected
                   </span>
                   {lastSync && (
-                    <span className="text-xs text-muted-foreground">· last sync {lastSync.toLocaleDateString("en-IN")}</span>
+                    <span className="text-xs text-muted-foreground">last sync {lastSync.toLocaleDateString("en-IN")}</span>
                   )}
-                  <label className="flex items-center gap-2 text-sm cursor-pointer ml-auto">
-                    <Checkbox checked={useRange} onCheckedChange={v => setUseRange(!!v)} />
-                    Custom date range
-                  </label>
                 </div>
-                {useRange && (
+
+                {/* Date preset pills */}
+                <div>
+                  <p className="text-xs text-muted-foreground mb-2 font-medium">Date range</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {PRESETS.map(p => (
+                      <button
+                        key={p.value}
+                        type="button"
+                        onClick={() => setPreset(p.value)}
+                        className={cn(
+                          "px-3 py-1 rounded-full text-xs font-medium transition-all border",
+                          preset === p.value
+                            ? "bg-green-500 text-white border-green-500 shadow-sm"
+                            : "bg-background text-muted-foreground border-border hover:border-green-400 hover:text-green-700"
+                        )}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Custom date pickers — shown only when Custom is selected */}
+                {preset === "custom" && (
                   <div className="flex gap-3 flex-wrap">
                     <div className="space-y-1 flex-1 min-w-[120px]">
                       <Label className="text-xs">From</Label>
@@ -122,6 +185,7 @@ export function GmailImportPanel({ onClose }: { onClose: () => void }) {
                     </div>
                   </div>
                 )}
+
                 <div className="flex items-center gap-3">
                   <Button onClick={handleScan} disabled={phase === "scanning"} className="bg-green-500 hover:bg-green-600 text-white" size="sm">
                     {phase === "scanning"
@@ -169,7 +233,7 @@ export function GmailImportPanel({ onClose }: { onClose: () => void }) {
                   >
                     {phase === "importing"
                       ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Importing…</>
-                      : `Import selected (${selectedTempIds.size})`
+                      : `Import (${selectedTempIds.size})`
                     }
                   </Button>
                 )}
@@ -182,7 +246,7 @@ export function GmailImportPanel({ onClose }: { onClose: () => void }) {
               </div>
             ) : (
               <>
-                {/* Mobile: card list — checkbox always visible, no truncation issues */}
+                {/* Mobile: card list */}
                 <div className="sm:hidden space-y-2">
                   {scanned.map(tx => {
                     const selected = selectedTempIds.has(tx.tempId);
@@ -204,9 +268,7 @@ export function GmailImportPanel({ onClose }: { onClose: () => void }) {
                           aria-label="Select"
                         />
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium text-sm truncate">
-                            {tx.merchantName ?? tx.description}
-                          </p>
+                          <p className="font-medium text-sm truncate">{tx.merchantName ?? tx.description}</p>
                           <p className="text-xs text-muted-foreground mt-0.5">{formatDate(tx.date)}</p>
                         </div>
                         <div className="flex items-center gap-0.5 flex-shrink-0">
@@ -248,9 +310,7 @@ export function GmailImportPanel({ onClose }: { onClose: () => void }) {
                               <Checkbox checked={selected} onCheckedChange={() => toggleOne(tx.tempId)} aria-label="Select" />
                             </TableCell>
                             <TableCell>
-                              <p className="font-medium text-sm truncate max-w-[220px]">
-                                {tx.merchantName ?? tx.description}
-                              </p>
+                              <p className="font-medium text-sm truncate max-w-[220px]">{tx.merchantName ?? tx.description}</p>
                               <p className="text-xs text-muted-foreground truncate max-w-[220px]">{tx.subject}</p>
                             </TableCell>
                             <TableCell className="text-sm text-muted-foreground whitespace-nowrap">

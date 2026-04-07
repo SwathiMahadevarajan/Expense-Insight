@@ -27,11 +27,11 @@ const SKIP_SUBJECT_RE =
 
 // --- Debit signals (covers all major Indian bank alert formats) ---
 const DEBIT_RE =
-  /\b(debited|debit|paid|payment made|withdrawn|spent|charged|purchase|sent|transferred to|has been used|used at|used for a transaction|amount.*deducted|card.*used|tap.*pay|mandate.*executed|emi.*deducted|standing instruction|auto.?debit)\b/i;
+  /\b(debited|debit|paid|payment made|withdrawn|spent|charged|purchase|sent|transferred to|has been used|used at|used for a transaction|amount.*deducted|card.*used|tap.*pay|mandate.*executed|emi.*deducted|standing instruction|auto.?debit|fund.?transfer|outward.{0,10}(?:neft|imps|rtgs)|neft.{0,20}(?:transfer|debit|outward)|imps.{0,20}(?:transfer|debit)|rtgs.{0,20}(?:transfer|debit)|account.*transfer)\b/i;
 
 // --- Credit signals (must look like an actual credit, not a cashback offer) ---
 const CREDIT_RE =
-  /\b(credited|credit|received|refund|salary|deposited|transfer received|payment received|amount.*credited|money.*received|funds.*received|neft.*credit)\b/i;
+  /\b(credited|credit|received|refund|salary|deposited|transfer received|payment received|amount.*credited|money.*received|funds.*received|neft.*credit|imps.*credit|inward.*neft|inward.*imps)\b/i;
 
 // --- Hard filters: skip if body or subject matches these promotional patterns ---
 const SKIP_BODY_RE =
@@ -102,8 +102,11 @@ function parseEmailForTransaction(
   // Hard filter on body content
   if (SKIP_BODY_RE.test(body)) return null;
 
-  // Skip promotional cashback/offer emails (e.g. "Get ₹500 cashback on income tax payment")
-  if (PROMO_OFFER_RE.test(text)) return null;
+  // Skip promotional cashback/offer emails.
+  // Only check subject + first 500 chars of body — many legitimate transaction alert emails
+  // have promotional footers that would otherwise cause false negatives.
+  const promoCheckArea = `${subject}\n${body.slice(0, 500)}`;
+  if (PROMO_OFFER_RE.test(promoCheckArea)) return null;
 
   // Must have a debit or credit signal
   const isDebit = DEBIT_RE.test(text);
@@ -126,9 +129,11 @@ function parseEmailForTransaction(
   const merchantPatterns = [
     // ICICI "Info: MERCHANT NAME" format
     /\binfo[:\s]+([A-Z][A-Za-z0-9\s&'.\-/]{2,60}?)(?:\s*[.\n]|$)/i,
+    // NEFT/IMPS beneficiary / remitter (sender for incoming)
+    /(?:beneficiary name|remitter name|payee name)[:\s]+([A-Za-z0-9\s&'.\-]{2,60}?)(?:\s*[\n.,]|$)/i,
     // "at MERCHANT" / "to MERCHANT" — most common
     /(?:\bat\b|\bto\b|\btowards\b)\s+([A-Z][A-Za-z0-9\s&'.\-/]{2,60}?)(?:\s+on\b|\s+via\b|\s+UPI\b|\s+dated\b|\s*[.,\n]|$)/i,
-    // "merchant: / payee: / beneficiary:"
+    // "merchant: / payee: / beneficiary: / VPA:"
     /(?:merchant|payee|beneficiary|VPA)[:\s]+([A-Za-z0-9\s&'.\-@]{2,60}?)(?:\s*[\n.,]|$)/i,
     // "paid to / payment to"
     /(?:paid to|payment to)\s+([A-Za-z0-9\s&'.\-]{2,60}?)(?:\s+on\b|\s*[\n.,]|$)/i,

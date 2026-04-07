@@ -1,18 +1,21 @@
 import React from "react";
 import { Link } from "wouter";
 import { useMonthSummary } from "@/hooks/use-local-insights";
-import { useTransactions } from "@/hooks/use-local-transactions";
+import { useTransactions, deleteTransaction, bulkDeleteTransactions } from "@/hooks/use-local-transactions";
 import { useAccounts } from "@/hooks/use-local-accounts";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   ArrowDownRight, ArrowUpRight, Wallet, TrendingUp, TrendingDown,
-  ChevronLeft, ChevronRight, Mail,
+  ChevronLeft, ChevronRight, Mail, Pencil, Trash2, CheckSquare, X,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { GmailImportPanel } from "@/components/gmail-import-panel";
+import { TransactionDialog } from "@/components/transaction-dialog";
+import { useToast } from "@/hooks/use-toast";
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -30,8 +33,19 @@ function isSameMonth(a: Date, b: Date) {
 
 export default function Dashboard() {
   const today = new Date();
+  const { toast } = useToast();
+
   const [selectedMonth, setSelectedMonth] = React.useState<Date>(startOfMonth(today));
   const [gmailOpen, setGmailOpen]         = React.useState(false);
+
+  // Edit modal
+  const [editTx, setEditTx]       = React.useState<any>(null);
+  const [editOpen, setEditOpen]   = React.useState(false);
+
+  // Bulk select mode
+  const [selectMode, setSelectMode]           = React.useState(false);
+  const [selectedIds, setSelectedIds]         = React.useState<Set<string>>(new Set());
+  const [isDeleting, setIsDeleting]           = React.useState(false);
 
   const isCurrentMonth = isSameMonth(selectedMonth, today);
 
@@ -55,6 +69,42 @@ export default function Dashboard() {
   const monthLabel = selectedMonth.toLocaleString("en-IN", { month: "long", year: "numeric" });
   const monthShort = selectedMonth.toLocaleString("en-IN", { month: "short",  year: "numeric" });
 
+  const openEdit = (tx: any) => {
+    if (selectMode) {
+      toggleSelect(tx.id);
+      return;
+    }
+    setEditTx(tx);
+    setEditOpen(true);
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const s = new Set(prev);
+      s.has(id) ? s.delete(id) : s.add(id);
+      return s;
+    });
+  };
+
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  };
+
+  const handleBulkDelete = async () => {
+    if (!selectedIds.size) return;
+    setIsDeleting(true);
+    try {
+      await bulkDeleteTransactions([...selectedIds]);
+      toast({ title: `${selectedIds.size} transaction${selectedIds.size !== 1 ? "s" : ""} deleted` });
+      exitSelectMode();
+    } catch {
+      toast({ title: "Delete failed", variant: "destructive" });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
 
@@ -66,15 +116,14 @@ export default function Dashboard() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Gmail import */}
+          {/* Gmail import — always primary green */}
           <Button
-            variant={gmailOpen ? "default" : "outline"}
             size="sm"
-            className={gmailOpen ? "bg-green-500 hover:bg-green-600 text-white" : ""}
+            className="bg-green-500 hover:bg-green-600 text-white shadow-sm shadow-green-500/30"
             onClick={() => setGmailOpen(v => !v)}
           >
             <Mail className="w-4 h-4 md:mr-2" />
-            <span className="hidden md:inline">Import Gmail</span>
+            <span className="hidden md:inline">{gmailOpen ? "Close Import" : "Import Gmail"}</span>
           </Button>
 
           {/* Month navigation */}
@@ -216,17 +265,50 @@ export default function Dashboard() {
 
       {/* ── Month Transactions ─────────────────────────────────── */}
       <div>
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-3 gap-2">
           <h2 className="text-base font-semibold">
             {monthLabel} · {txData?.total ?? 0} transactions
           </h2>
-          {(txData?.total ?? 0) > 0 && (
-            <Link href="/transactions">
-              <span className="text-xs text-primary cursor-pointer font-medium hover:underline">
-                See all →
-              </span>
-            </Link>
-          )}
+          <div className="flex items-center gap-2">
+            {selectMode ? (
+              <>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="h-7 text-xs px-3"
+                  disabled={selectedIds.size === 0 || isDeleting}
+                  onClick={handleBulkDelete}
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-1" />
+                  Delete ({selectedIds.size})
+                </Button>
+                <Button variant="ghost" size="sm" className="h-7 text-xs px-2" onClick={exitSelectMode}>
+                  <X className="w-3.5 h-3.5" />
+                </Button>
+              </>
+            ) : (
+              <>
+                {(txData?.total ?? 0) > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs px-2 text-muted-foreground"
+                    onClick={() => setSelectMode(true)}
+                  >
+                    <CheckSquare className="w-3.5 h-3.5 mr-1" />
+                    Select
+                  </Button>
+                )}
+                {(txData?.total ?? 0) > 0 && (
+                  <Link href="/transactions">
+                    <span className="text-xs text-primary cursor-pointer font-medium hover:underline">
+                      See all →
+                    </span>
+                  </Link>
+                )}
+              </>
+            )}
+          </div>
         </div>
 
         {isLoadingTx ? (
@@ -244,45 +326,73 @@ export default function Dashboard() {
           </Card>
         ) : (
           <div className="space-y-2">
-            {txData.transactions.map(tx => (
-              <Card key={tx.id} className="hover-elevate overflow-hidden">
-                <CardContent className="flex items-center gap-3 p-3">
-                  {/* Category icon */}
-                  <div
-                    className="w-10 h-10 rounded-2xl flex-shrink-0 flex items-center justify-center text-lg"
-                    style={{
-                      backgroundColor: tx.categoryColor ? `${tx.categoryColor}20` : "#f1f5f9",
-                      color: tx.categoryColor ?? "#94a3b8",
-                    }}
-                  >
-                    {tx.categoryIcon ?? (tx.importSource === "email" ? "📧" : "💳")}
-                  </div>
+            {txData.transactions.map(tx => {
+              const isSelected = selectedIds.has(tx.id);
+              return (
+                <Card
+                  key={tx.id}
+                  className={`overflow-hidden cursor-pointer transition-all ${
+                    selectMode && isSelected
+                      ? "ring-2 ring-primary border-primary/40"
+                      : "hover-elevate"
+                  }`}
+                  onClick={() => openEdit(tx)}
+                >
+                  <CardContent className="flex items-center gap-3 p-3">
+                    {/* Checkbox in select mode */}
+                    {selectMode && (
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={() => toggleSelect(tx.id)}
+                        onClick={e => e.stopPropagation()}
+                        className="flex-shrink-0"
+                      />
+                    )}
 
-                  {/* Description */}
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm truncate leading-tight">{tx.description}</p>
-                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                      <span className="text-xs text-muted-foreground">{formatDate(tx.date)}</span>
-                      {tx.categoryName && (
-                        <Badge variant="outline" className="text-[10px] py-0 h-4 px-1.5">
-                          {tx.categoryName}
-                        </Badge>
+                    {/* Category icon */}
+                    {!selectMode && (
+                      <div
+                        className="w-10 h-10 rounded-2xl flex-shrink-0 flex items-center justify-center text-lg"
+                        style={{
+                          backgroundColor: tx.categoryColor ? `${tx.categoryColor}20` : "#f1f5f9",
+                          color: tx.categoryColor ?? "#94a3b8",
+                        }}
+                      >
+                        {tx.categoryIcon ?? (tx.importSource === "email" ? "📧" : "💳")}
+                      </div>
+                    )}
+
+                    {/* Description */}
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm truncate leading-tight">{tx.description}</p>
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                        <span className="text-xs text-muted-foreground">{formatDate(tx.date)}</span>
+                        {tx.categoryName && (
+                          <Badge variant="outline" className="text-[10px] py-0 h-4 px-1.5">
+                            {tx.categoryName}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Amount + edit hint */}
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <div className="flex items-center gap-0.5">
+                        {tx.type === "income"
+                          ? <ArrowUpRight className="w-3.5 h-3.5 text-emerald-500" />
+                          : <ArrowDownRight className="w-3.5 h-3.5 text-red-500" />}
+                        <span className={`font-bold text-sm ${tx.type === "income" ? "text-emerald-600" : "text-red-500"}`}>
+                          {formatCurrency(tx.amount)}
+                        </span>
+                      </div>
+                      {!selectMode && (
+                        <Pencil className="w-3.5 h-3.5 text-muted-foreground/40" />
                       )}
                     </div>
-                  </div>
-
-                  {/* Amount */}
-                  <div className="flex items-center gap-0.5 flex-shrink-0">
-                    {tx.type === "income"
-                      ? <ArrowUpRight className="w-3.5 h-3.5 text-emerald-500" />
-                      : <ArrowDownRight className="w-3.5 h-3.5 text-red-500" />}
-                    <span className={`font-bold text-sm ${tx.type === "income" ? "text-emerald-600" : "text-red-500"}`}>
-                      {formatCurrency(tx.amount)}
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardContent>
+                </Card>
+              );
+            })}
 
             {/* Month total strip */}
             {txData.total > 0 && summary && (
@@ -301,6 +411,18 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* Edit transaction modal */}
+      <TransactionDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        transactionToEdit={editTx}
+        onDelete={async (id) => {
+          await deleteTransaction(id);
+          toast({ title: "Transaction deleted" });
+          setEditOpen(false);
+        }}
+      />
     </div>
   );
 }
