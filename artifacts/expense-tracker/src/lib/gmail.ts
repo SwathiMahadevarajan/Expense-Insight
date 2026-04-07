@@ -27,7 +27,7 @@ const SKIP_SUBJECT_RE =
 
 // --- Debit signals (covers all major Indian bank alert formats) ---
 const DEBIT_RE =
-  /\b(debited|debit|paid|payment made|withdrawn|spent|charged|purchase|sent|transferred to|has been used|used at|used for a transaction|amount.*deducted|card.*used|tap.*pay|mandate.*executed|emi.*deducted|standing instruction|auto.?debit|fund.?transfer|outward.{0,10}(?:neft|imps|rtgs)|neft.{0,20}(?:transfer|debit|outward)|imps.{0,20}(?:transfer|debit)|rtgs.{0,20}(?:transfer|debit)|account.*transfer)\b/i;
+  /\b(debited|debit|paid|payment made|withdrawn|spent|charged|purchase|sent|transferred to|has been used|used at|used for a transaction|amount.*deducted|card.*used|tap.*pay|mandate.*executed|emi.*deducted|standing instruction|auto.?debit|fund.?transfer|outward.{0,10}(?:neft|imps|rtgs)|neft.{0,20}(?:transfer|debit|outward|payment)|imps.{0,20}(?:transfer|debit|payment)|rtgs.{0,20}(?:transfer|debit|payment)|account.*transfer|payment\s+towards|made.{0,30}(?:neft|imps|rtgs|upi).{0,30}payment)\b/i;
 
 // --- Credit signals (must look like an actual credit, not a cashback offer) ---
 const CREDIT_RE =
@@ -36,6 +36,11 @@ const CREDIT_RE =
 // --- Hard filters: skip if body or subject matches these promotional patterns ---
 const SKIP_BODY_RE =
   /click here to (apply|buy|shop|avail)|limited time offer|exclusive deal|shop now|buy now|upgrade now|pre.?approved offer|special discount|upto \d+% off|\d+% cashback on shopping/i;
+
+// --- Self-transfer signals: money moving between the user's own accounts ---
+// These should be stored as "transfer" type and excluded from income/expense totals.
+const SELF_TRANSFER_RE =
+  /\b(own\s+account|self.{0,10}transfer|transfer.{0,10}self|inter.?account|auto.?sweep|sweep.{0,15}(?:in|out)|between.{0,20}(?:your\s+)?accounts?|internal\s+transfer|account.to.account|payable\s+to\s+self|i.fund\s*transfer)\b/i;
 
 // --- Promotional offer pattern: "Get ₹X cashback", "Earn X cashback when you pay", etc.
 // These are marketing emails, not real transaction confirmations.
@@ -73,7 +78,7 @@ export interface ParsedEmailTransaction {
   tempId: string;
   gmailMessageId: string;
   amount: number;
-  type: "income" | "expense";
+  type: "income" | "expense" | "transfer";
   description: string;
   merchantName: string | null;
   date: string;
@@ -108,10 +113,13 @@ function parseEmailForTransaction(
   const promoCheckArea = `${subject}\n${body.slice(0, 500)}`;
   if (PROMO_OFFER_RE.test(promoCheckArea)) return null;
 
-  // Must have a debit or credit signal
+  // Check for self-transfer (money between own accounts — neither income nor expense)
+  const isSelfTransfer = SELF_TRANSFER_RE.test(text);
+
+  // Must have a debit, credit, or self-transfer signal
   const isDebit = DEBIT_RE.test(text);
   const isCredit = CREDIT_RE.test(text);
-  if (!isDebit && !isCredit) return null;
+  if (!isDebit && !isCredit && !isSelfTransfer) return null;
 
   // Must have a rupee amount in a recognised format
   const amountMatch =
@@ -122,7 +130,9 @@ function parseEmailForTransaction(
   const amount = parseFloat(amountMatch[1].replace(/,/g, ""));
   if (isNaN(amount) || amount <= 0 || amount > 10_000_000) return null;
 
-  const type: "income" | "expense" = isCredit && !isDebit ? "income" : "expense";
+  const type: "income" | "expense" | "transfer" =
+    isSelfTransfer ? "transfer" :
+    (isCredit && !isDebit) ? "income" : "expense";
 
   // --- Merchant extraction (order matters — first match wins) ---
   let merchantName: string | null = null;
@@ -186,9 +196,13 @@ function parseEmailForTransaction(
     "cat-salary": /salary|payroll|wages|stipend/i,
   };
   let categoryId: string | null = null;
-  const haystack = `${merchantName ?? ""} ${subject} ${body.slice(0, 200)}`;
-  for (const [catId, re] of Object.entries(categoryMap)) {
-    if (re.test(haystack)) { categoryId = catId; break; }
+  if (type === "transfer") {
+    categoryId = "cat-transfer";
+  } else {
+    const haystack = `${merchantName ?? ""} ${subject} ${body.slice(0, 200)}`;
+    for (const [catId, re] of Object.entries(categoryMap)) {
+      if (re.test(haystack)) { categoryId = catId; break; }
+    }
   }
 
   // Build a clean fallback description when no merchant name could be extracted.
@@ -215,8 +229,12 @@ function parseEmailForTransaction(
     .filter(Boolean).join(" ") || (type === "expense" ? "Bank Debit" : "Bank Credit");
 
   const description = merchantName
-    ? `${type === "expense" ? "Payment to" : "Receipt from"} ${merchantName}`
-    : fallback;
+    ? (type === "transfer"
+        ? `Transfer to ${merchantName}`
+        : type === "expense"
+          ? `Payment to ${merchantName}`
+          : `Receipt from ${merchantName}`)
+    : (type === "transfer" ? `${fallback} Transfer` : fallback);
 
   return {
     tempId: generateId(),

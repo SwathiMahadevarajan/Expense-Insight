@@ -25,7 +25,7 @@ export interface Account {
 export interface Transaction {
   id: string;
   amount: number;
-  type: "income" | "expense";
+  type: "income" | "expense" | "transfer";
   description: string;
   merchantName?: string | null;
   date: string;
@@ -87,6 +87,7 @@ const DEFAULT_CATEGORIES: Category[] = [
   { id: "cat-groceries", name: "Groceries", icon: "🛒", color: "#22c55e", type: "expense", isDefault: true },
   { id: "cat-salary", name: "Salary", icon: "💰", color: "#10b981", type: "income", isDefault: true },
   { id: "cat-investment", name: "Investment", icon: "📈", color: "#06b6d4", type: "income", isDefault: true },
+  { id: "cat-transfer", name: "Self Transfer", icon: "↔️", color: "#6366f1", type: "both", isDefault: true },
   { id: "cat-other", name: "Other", icon: "📦", color: "#94a3b8", type: "both", isDefault: true },
 ];
 

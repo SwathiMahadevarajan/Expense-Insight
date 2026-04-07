@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowDownRight, ArrowUpRight, RefreshCw, Loader2 } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, ArrowLeftRight, RefreshCw, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -274,8 +274,10 @@ export function GmailImportPanel({ onClose }: { onClose: () => void }) {
                         <div className="flex items-center gap-0.5 flex-shrink-0">
                           {tx.type === "income"
                             ? <ArrowUpRight className="w-3.5 h-3.5 text-emerald-500" />
-                            : <ArrowDownRight className="w-3.5 h-3.5 text-red-500" />}
-                          <span className={`font-semibold text-sm ${tx.type === "income" ? "text-emerald-600" : "text-red-500"}`}>
+                            : tx.type === "transfer"
+                              ? <ArrowLeftRight className="w-3.5 h-3.5 text-indigo-500" />
+                              : <ArrowDownRight className="w-3.5 h-3.5 text-red-500" />}
+                          <span className={`font-semibold text-sm ${tx.type === "income" ? "text-emerald-600" : tx.type === "transfer" ? "text-indigo-500" : "text-red-500"}`}>
                             {formatCurrency(tx.amount)}
                           </span>
                         </div>

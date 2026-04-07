@@ -24,7 +24,7 @@ export function TransactionDialog({ open, onOpenChange, transactionToEdit, onDel
   const [isSaving, setIsSaving] = React.useState(false);
   const [isDeleting, setIsDeleting] = React.useState(false);
 
-  const [type, setType] = React.useState<"expense" | "income">("expense");
+  const [type, setType] = React.useState<"expense" | "income" | "transfer">("expense");
   const [amount, setAmount] = React.useState("");
   const [description, setDescription] = React.useState("");
   const [date, setDate] = React.useState(new Date().toISOString().split("T")[0]);
@@ -94,7 +94,7 @@ export function TransactionDialog({ open, onOpenChange, transactionToEdit, onDel
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 pt-2">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-2">
             <Button type="button" variant={type === "expense" ? "default" : "outline"}
               className={type === "expense" ? "bg-red-500 hover:bg-red-600 text-white" : ""}
               onClick={() => setType("expense")}>
@@ -104,6 +104,11 @@ export function TransactionDialog({ open, onOpenChange, transactionToEdit, onDel
               className={type === "income" ? "bg-emerald-600 hover:bg-emerald-700 text-white" : ""}
               onClick={() => setType("income")}>
               Income
+            </Button>
+            <Button type="button" variant={type === "transfer" ? "default" : "outline"}
+              className={type === "transfer" ? "bg-indigo-500 hover:bg-indigo-600 text-white" : ""}
+              onClick={() => setType("transfer")}>
+              Transfer
             </Button>
           </div>
 

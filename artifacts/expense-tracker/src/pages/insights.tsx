@@ -9,7 +9,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
-import { TrendingDown, TrendingUp, Wallet, BarChart2, Table2, PieChart as PieIcon, ArrowDownRight, ArrowUpRight } from "lucide-react";
+import { TrendingDown, TrendingUp, Wallet, BarChart2, Table2, PieChart as PieIcon, ArrowDownRight, ArrowUpRight, ArrowLeftRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -200,8 +200,10 @@ function CategoryDrillDown({ drill, onClose }: { drill: DrillCategory; onClose: 
                 <div className="flex items-center gap-1 flex-shrink-0">
                   {tx.type === "income"
                     ? <ArrowUpRight className="w-3.5 h-3.5 text-emerald-500" />
-                    : <ArrowDownRight className="w-3.5 h-3.5 text-red-500" />}
-                  <span className={`font-semibold text-sm ${tx.type === "income" ? "text-emerald-600" : "text-red-500"}`}>
+                    : tx.type === "transfer"
+                      ? <ArrowLeftRight className="w-3.5 h-3.5 text-indigo-500" />
+                      : <ArrowDownRight className="w-3.5 h-3.5 text-red-500" />}
+                  <span className={`font-semibold text-sm ${tx.type === "income" ? "text-emerald-600" : tx.type === "transfer" ? "text-indigo-500" : "text-red-500"}`}>
                     {formatCurrency(tx.amount)}
                   </span>
                 </div>

@@ -12,7 +12,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import {
-  ArrowDownRight, ArrowUpRight, Search, Plus, Trash2, Edit2, Download,
+  ArrowDownRight, ArrowUpRight, ArrowLeftRight, Search, Plus, Trash2, Edit2, Download,
   ArrowUpDown, Filter, Mail, ChevronDown, X,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -21,7 +21,7 @@ import { GmailImportPanel } from "@/components/gmail-import-panel";
 
 type SortField = "date" | "amount" | "description";
 type SortDir = "asc" | "desc";
-type TypeFilter = "all" | "income" | "expense";
+type TypeFilter = "all" | "income" | "expense" | "transfer";
 
 // ─── Main Transactions Page ───────────────────────────────────────────────────
 
@@ -68,8 +68,13 @@ export default function Transactions() {
   }, [data, searchTerm, typeFilter, sortField, sortDir]);
 
   const totalShown = sortedFiltered.reduce(
-    (acc, tx) => { if (tx.type === "income") acc.income += tx.amount; else acc.expense += tx.amount; return acc; },
-    { income: 0, expense: 0 }
+    (acc, tx) => {
+      if (tx.type === "income") acc.income += tx.amount;
+      else if (tx.type === "expense") acc.expense += tx.amount;
+      else acc.transfer += tx.amount;
+      return acc;
+    },
+    { income: 0, expense: 0, transfer: 0 }
   );
 
   const allSelected = sortedFiltered.length > 0 && sortedFiltered.every(tx => selectedIds.has(tx.id));
@@ -168,6 +173,7 @@ export default function Transactions() {
             <SelectItem value="all">All types</SelectItem>
             <SelectItem value="income">Income</SelectItem>
             <SelectItem value="expense">Expenses</SelectItem>
+            <SelectItem value="transfer">Transfers</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -213,6 +219,7 @@ export default function Transactions() {
           <span className="text-muted-foreground">{sortedFiltered.length} shown</span>
           {totalShown.income > 0 && <span className="text-emerald-600 font-medium">+{formatCurrency(totalShown.income)}</span>}
           {totalShown.expense > 0 && <span className="text-red-500 font-medium">−{formatCurrency(totalShown.expense)}</span>}
+          {totalShown.transfer > 0 && <span className="text-indigo-500 font-medium">↔ {formatCurrency(totalShown.transfer)}</span>}
         </div>
       )}
 
@@ -273,8 +280,10 @@ export default function Transactions() {
                       <div className="flex items-center justify-end gap-1">
                         {tx.type === "income"
                           ? <ArrowUpRight className="w-3.5 h-3.5 text-emerald-500" />
-                          : <ArrowDownRight className="w-3.5 h-3.5 text-red-500" />}
-                        <span className={`font-semibold text-sm ${tx.type === "income" ? "text-emerald-600" : "text-red-500"}`}>
+                          : tx.type === "transfer"
+                            ? <ArrowLeftRight className="w-3.5 h-3.5 text-indigo-500" />
+                            : <ArrowDownRight className="w-3.5 h-3.5 text-red-500" />}
+                        <span className={`font-semibold text-sm ${tx.type === "income" ? "text-emerald-600" : tx.type === "transfer" ? "text-indigo-500" : "text-red-500"}`}>
                           {formatCurrency(tx.amount)}
                         </span>
                       </div>

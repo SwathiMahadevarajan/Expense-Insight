@@ -4,7 +4,7 @@ import { db, generateId, type Transaction } from "@/lib/db";
 export interface TransactionFilter {
   accountId?: string;
   categoryId?: string;
-  type?: "income" | "expense";
+  type?: "income" | "expense" | "transfer";
   startDate?: Date;
   endDate?: Date;
   limit?: number;

@@ -7,7 +7,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
-  ArrowDownRight, ArrowUpRight, Wallet, TrendingUp, TrendingDown,
+  ArrowDownRight, ArrowUpRight, ArrowLeftRight, Wallet, TrendingUp, TrendingDown,
   ChevronLeft, ChevronRight, Mail, Pencil, Trash2, CheckSquare, X,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -380,8 +380,10 @@ export default function Dashboard() {
                       <div className="flex items-center gap-0.5">
                         {tx.type === "income"
                           ? <ArrowUpRight className="w-3.5 h-3.5 text-emerald-500" />
-                          : <ArrowDownRight className="w-3.5 h-3.5 text-red-500" />}
-                        <span className={`font-bold text-sm ${tx.type === "income" ? "text-emerald-600" : "text-red-500"}`}>
+                          : tx.type === "transfer"
+                            ? <ArrowLeftRight className="w-3.5 h-3.5 text-indigo-500" />
+                            : <ArrowDownRight className="w-3.5 h-3.5 text-red-500" />}
+                        <span className={`font-bold text-sm ${tx.type === "income" ? "text-emerald-600" : tx.type === "transfer" ? "text-indigo-500" : "text-red-500"}`}>
                           {formatCurrency(tx.amount)}
                         </span>
                       </div>
