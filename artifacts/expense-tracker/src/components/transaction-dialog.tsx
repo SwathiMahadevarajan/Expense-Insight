@@ -160,16 +160,26 @@ export function TransactionDialog({ open, onOpenChange, transactionToEdit, onDel
           </div>
 
           {/* Email context hint — visible only for Gmail-imported transactions */}
-          {transactionToEdit?.importSource === "email" && transactionToEdit?.emailSubject && (
-            <div className="flex items-start gap-2 rounded-lg bg-muted/50 border px-3 py-2">
+          {transactionToEdit?.importSource === "email" &&
+            (transactionToEdit?.emailBodySnippet || transactionToEdit?.emailSubject) && (
+            <div className="flex items-start gap-2 rounded-lg bg-muted/50 border px-3 py-2.5">
               <Mail className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-green-600" />
-              <div className="min-w-0">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
-                  Original email
+              <div className="min-w-0 space-y-0.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  From bank email
                 </p>
-                <p className="text-xs text-foreground leading-relaxed break-words">
-                  {transactionToEdit.emailSubject}
-                </p>
+                {/* Body snippet is the primary hint — it contains the actual spend line */}
+                {transactionToEdit.emailBodySnippet ? (
+                  <p className="text-xs text-foreground leading-relaxed break-words">
+                    {transactionToEdit.emailBodySnippet}
+                  </p>
+                ) : null}
+                {/* Subject as secondary, dimmed */}
+                {transactionToEdit.emailSubject && (
+                  <p className="text-[11px] text-muted-foreground leading-relaxed break-words">
+                    {transactionToEdit.emailSubject}
+                  </p>
+                )}
               </div>
             </div>
           )}

@@ -35,6 +35,7 @@ export interface Transaction {
   importSource: "manual" | "email";
   gmailMessageId?: string | null;
   emailSubject?: string | null;
+  emailBodySnippet?: string | null;
   createdAt: string;
   updatedAt: string;
 }

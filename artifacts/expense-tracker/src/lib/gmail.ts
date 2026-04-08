@@ -30,12 +30,16 @@ const DEBIT_RE =
   /\b(debited|debit|paid|payment made|withdrawn|spent|charged|purchase|sent|transferred to|has been used|used at|used for a transaction|amount.*deducted|card.*used|tap.*pay|mandate.*executed|emi.*deducted|standing instruction|auto.?debit|fund.?transfer|outward.{0,10}(?:neft|imps|rtgs)|neft.{0,20}(?:transfer|debit|outward|payment)|imps.{0,20}(?:transfer|debit|payment)|rtgs.{0,20}(?:transfer|debit|payment)|account.*transfer|payment\s+towards|made.{0,30}(?:neft|imps|rtgs|upi).{0,30}payment)\b/i;
 
 // --- Credit signals (must look like an actual credit, not a cashback offer) ---
+// NOTE: "salary" alone is intentionally NOT here — "Salary Account" in feature
+// descriptions would fire it. We require a credit verb after it instead.
 const CREDIT_RE =
-  /\b(credited|credit|received|refund|salary|deposited|transfer received|payment received|amount.*credited|money.*received|funds.*received|neft.*credit|imps.*credit|inward.*neft|inward.*imps)\b/i;
+  /\b(credited|credit|received|refund|deposited|transfer received|payment received|amount.*credited|money.*received|funds.*received|salary.{0,30}(?:credited|credit|received|deposited)|neft.*credit|imps.*credit|inward.*neft|inward.*imps)\b/i;
 
 // --- Hard filters: skip if body or subject matches these promotional patterns ---
+// Also catches bank "relationship manager" intro emails and account feature mailers
+// which contain phrases like "Debit Card limit" that falsely trigger DEBIT_RE.
 const SKIP_BODY_RE =
-  /click here to (apply|buy|shop|avail)|limited time offer|exclusive deal|shop now|buy now|upgrade now|pre.?approved offer|special discount|upto \d+% off|\d+% cashback on shopping/i;
+  /click here to (apply|buy|shop|avail)|limited time offer|exclusive deal|shop now|buy now|upgrade now|pre.?approved offer|special discount|upto \d+% off|\d+% cashback on shopping|greetings from|relationship manager|am delighted to|key features.*(?:debit|credit|atm)|salary account.*(?:features|benefits)|dedicated.*(?:manager|advisor)/i;
 
 // --- Self-transfer signals: money moving between the user's own accounts ---
 // These should be stored as "transfer" type and excluded from income/expense totals.
@@ -91,6 +95,54 @@ export interface ParsedEmailTransaction {
   categoryId: string | null;
   subject: string;
   fromEmail: string;
+  bodySnippet: string | null;
+}
+
+/**
+ * Extract the most useful 1-2 sentence snippet from an email body.
+ * Strategy: find the sentence containing the rupee amount — it's almost always
+ * the one that says what was spent / where / to whom.
+ * Falls back to the first 200 non-blank chars of the body.
+ */
+function extractBodySnippet(body: string, amountStr: string): string | null {
+  // Normalise whitespace
+  const clean = body.replace(/\s+/g, " ").trim();
+  if (!clean) return null;
+
+  // Split into rough sentences (period / newline boundaries)
+  const sentences = clean
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map(s => s.trim())
+    .filter(s => s.length > 10);
+
+  // Find sentence(s) containing the transaction amount
+  const amountDigits = amountStr.replace(/[,\s]/g, "");
+  const amtRe = new RegExp(amountDigits.replace(".", "\\."));
+
+  // Score each sentence: prefer sentences that have the amount AND a location/merchant hint
+  const USEFUL_RE = /\b(?:at|to|from|towards|merchant|payee|beneficiary|VPA|UPI|NEFT|IMPS|ref|UTR|spent|debited|credited|paid)\b/i;
+
+  let best: string | null = null;
+  for (const s of sentences) {
+    if (amtRe.test(s)) {
+      if (USEFUL_RE.test(s)) { best = s; break; }   // ideal: amount + location info
+      if (!best) best = s;                           // fallback: at least has amount
+    }
+  }
+
+  // If no amount sentence found, take first substantive sentence (skip greetings)
+  if (!best) {
+    const GREETING_RE = /^(dear|hi|hello|greetings|thank|please|note)\b/i;
+    best = sentences.find(s => !GREETING_RE.test(s)) ?? sentences[0] ?? null;
+  }
+
+  if (!best) return null;
+
+  // Cap at 220 chars, trim at word boundary
+  if (best.length > 220) {
+    best = best.slice(0, 220).replace(/\s\S*$/, "") + "…";
+  }
+  return best;
 }
 
 function parseEmailForTransaction(
@@ -249,6 +301,8 @@ function parseEmailForTransaction(
           : `Receipt from ${merchantName}`)
     : (type === "transfer" ? `${fallback} Transfer` : fallback);
 
+  const bodySnippet = extractBodySnippet(body, amountMatch[1]);
+
   return {
     tempId: generateId(),
     gmailMessageId,
@@ -260,6 +314,7 @@ function parseEmailForTransaction(
     categoryId,
     subject,
     fromEmail: from,
+    bodySnippet,
   };
 }
 
@@ -369,6 +424,7 @@ export async function importSelectedTransactions(
       importSource: "email",
       gmailMessageId: item.gmailMessageId,
       emailSubject: item.subject || null,
+      emailBodySnippet: item.bodySnippet || null,
       createdAt: now,
       updatedAt: now,
     });
