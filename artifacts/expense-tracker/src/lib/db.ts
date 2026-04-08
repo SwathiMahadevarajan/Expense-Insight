@@ -34,6 +34,7 @@ export interface Transaction {
   notes?: string | null;
   importSource: "manual" | "email";
   gmailMessageId?: string | null;
+  emailSubject?: string | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -8,7 +8,7 @@ import { createTransaction, updateTransaction } from "@/hooks/use-local-transact
 import { useAccounts } from "@/hooks/use-local-accounts";
 import { useCategories } from "@/hooks/use-local-categories";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2 } from "lucide-react";
+import { Mail, Trash2 } from "lucide-react";
 
 interface TransactionDialogProps {
   open: boolean;
@@ -158,6 +158,21 @@ export function TransactionDialog({ open, onOpenChange, transactionToEdit, onDel
               </SelectContent>
             </Select>
           </div>
+
+          {/* Email context hint — visible only for Gmail-imported transactions */}
+          {transactionToEdit?.importSource === "email" && transactionToEdit?.emailSubject && (
+            <div className="flex items-start gap-2 rounded-lg bg-muted/50 border px-3 py-2">
+              <Mail className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-green-600" />
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-0.5">
+                  Original email
+                </p>
+                <p className="text-xs text-foreground leading-relaxed break-words">
+                  {transactionToEdit.emailSubject}
+                </p>
+              </div>
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label>Notes (optional)</Label>

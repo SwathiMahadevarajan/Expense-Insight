@@ -49,7 +49,13 @@ const PROMO_OFFER_RE =
 
 // --- Words that should never appear in a real merchant name ---
 const INVALID_MERCHANT_RE =
-  /\b(?:cashback|reward|offer|discount|voucher|prize|win|upto|bonus|exclusive|limited|click|avail|earn reward)\b/i;
+  /\b(?:cashback|reward|offer|discount|voucher|prize|win|upto|bonus|exclusive|limited|click|avail|earn reward|employees?|never\s+ask|claims?\s+to)\b/i;
+
+// --- Stop-words that can start a sentence but never start a real merchant name ---
+// Guards against security-warning text like "to be from ICICI Bank. Bank employees..."
+// being captured as a merchant via the "to" keyword in merchant patterns.
+const MERCHANT_STOP_RE =
+  /^(be|a|an|the|if|when|for|as|it|this|that|by|you|your|we|our|my|i|never|not|no|please|dear|note|kindly|do|call|click|tap|are|is|was|were|with|from|in|on|at|he|she|they|who|which|any|all|bank\s+employ)\b/i;
 
 async function gmailFetch(path: string, token: string) {
   const res = await fetch(`https://gmail.googleapis.com/gmail/v1/${path}`, {
@@ -157,6 +163,13 @@ function parseEmailForTransaction(
       // Skip if the extracted "merchant" looks like a date, amount, or promo text
       if (/^\d/.test(candidate)) continue;
       if (INVALID_MERCHANT_RE.test(candidate)) continue;
+      // Must start with a true uppercase letter A–Z.
+      // The patterns use /i so [A-Z] matches lowercase too — re-check explicitly.
+      // This stops security-warning text like "be from ICICI Bank" being captured.
+      const code = candidate.charCodeAt(0);
+      if (code < 65 || code > 90) continue;
+      // Must not start with a common English stop-word / verb form.
+      if (MERCHANT_STOP_RE.test(candidate)) continue;
       // Skip if too many words — likely grabbed a sentence fragment, not a merchant name
       if (candidate.split(/\s+/).length > 6) continue;
       merchantName = candidate.replace(/\s+/g, " ");
@@ -355,6 +368,7 @@ export async function importSelectedTransactions(
       notes: null,
       importSource: "email",
       gmailMessageId: item.gmailMessageId,
+      emailSubject: item.subject || null,
       createdAt: now,
       updatedAt: now,
     });
